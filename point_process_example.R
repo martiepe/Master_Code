@@ -13,7 +13,6 @@ set.seed(1)
 
 
 
-
 #######################
 ## Define covariates ##
 #######################
@@ -112,9 +111,9 @@ ggplot() +
 
 
 
-#####################
-## MCMC estimation ##
-#####################
+################
+## estimation ##
+################
 
 #likelihood function
 lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
@@ -171,111 +170,8 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
 }
 
 
+#par: B1, B2, B3, kappa
+par = c(0,0,0,1)
 
-
-
-
-
-
-#starting values
-B_1 = 0
-B_2 = 0
-B_3 = 0
-kappa = 1
-#matrix containing sampled parameters
-params = matrix(c(B_1, B_2, B_3, kappa),ncol = 4)
-
-#number of samples
-n = 0
-#number of proposed values
-r = 0
-#random walk variance
-s = 0.000001
-
-Sigma = diag(s, 4, 4)
-
-while (n < 100000) {
-  
-  #log of denominator of acceptance rate
-  ld = lik(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta) + 
-    pnorm(B_1, mean = 0, sd = 10^10,log.p = T) + 
-    pnorm(B_2, mean = 0, sd = 10^10,log.p = T) + 
-    pnorm(B_3, mean = 0, sd = 10^10,log.p = T) + 
-    pnorm(log(kappa), mean = 0, sd = 10^10,log.p = T) 
-
-  #value signifying if proposed value has been accepted
-  d = F
-  while(d == F){
-    prop = rmvnorm(1, mean = c(B_1, B_2, B_3, log(kappa)), sigma = Sigma)
-    
-    B_1_p = prop[1]
-    B_2_p = prop[2]
-    B_3_p = prop[3]
-    kappa_p = exp(prop[4])
-    r = r+1
-    
-    #compute log of acceptance rate
-    a = lik(X, Y, B_1_p, B_2_p, B_3_p, kappa, ntrack, Delta) +
-      pnorm(B_1_p, mean = 0, sd = 10^10,log.p = T) + 
-      pnorm(B_2_p, mean = 0, sd = 10^10,log.p = T) + 
-      pnorm(B_3_p, mean = 0, sd = 10^10,log.p = T) + 
-      pnorm(log(kappa_p), mean = 0, sd = 10^10,log.p = T) -
-      ld
-    
-    #acceptance probability
-    A = min(exp(a), 1)
-    print(A)
-    #if the proposal is accepted
-    if(runif(1) < A){
-      params = rbind(params, c(B_1_p, B_2_p, B_3_p, kappa_p))
-      B_1 = B_1_p
-      B_2 = B_2_p
-      B_3 = B_3_p
-      kappa = kappa_p
-      #proposed value has been accepted
-      d = T
-      #sample has increased
-      n = n + 1
-      
-      print(n)
-    }
-  }
-}
-
-
-
-
-
-
-pars = data.frame(B_1 = params[, 1], B_2 = params[,2], B_3 = params[,3], kappa = params[,4])
-
-save(pars, file = "MCMC_sample3.Rda")
-
-p1 = 0
-p2 = 0
-p3 = 0
-p4 = 0
-
-
-#plotting parameter samples
-p1 <- ggplot() +
-  geom_line(aes(1:dim(params)[1], params[,1])) +
-  labs(x = "n", y = "Beta_1", title = "Samples of Beta_1") +
-  theme_bw()
-p2 <- ggplot() +
-  geom_line(aes(1:dim(params)[1], params[,2])) +
-  labs(x = "n", y = "Beta_2", title = "Samples of Beta_2") +
-  theme_bw()
-p3 <- ggplot() +
-  geom_line(aes(1:dim(params)[1], params[,3])) +
-  labs(x = "n", y = "Beta_3", title = "Samples of Beta_3") +
-  theme_bw()
-p4 <- ggplot() +
-  geom_line(aes(1:dim(params)[1], params[,4])) +
-  labs(x = "n", y = "kappa", title = "Samples of kappa") +
-  theme_bw()
-
-grid.arrange(p1,p2,p3,p4)
-
-
+o = optim(lik, par)
 
