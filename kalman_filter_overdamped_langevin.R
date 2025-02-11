@@ -66,7 +66,7 @@ dt <- 0.01
 #time grid
 time <- seq(0, Tmax, by = dt)
 #number of tracks to be generated
-ntrack <- 10
+ntrack <- 1
 #speed parameter for Langevin model
 speed <- 5
 
@@ -105,6 +105,7 @@ load('10Langevin_tracks.RData')
 
 #par: B_1, B_2, B_3, gamma^2
 
+
 lik <- function(par){
   #log-likelihood
   l = 0
@@ -112,6 +113,7 @@ lik <- function(par){
   for (j in 1:1) {
     #observation matrix
     H = diag(1,2,2)
+    
     #transition matrix
     F_k = diag(1,2,2)
     #control matrix
@@ -130,7 +132,6 @@ lik <- function(par){
     z = X[1, ]
     
     for (i in 2:nrow(X)) {
-      
       #control vector
       u = gradArray[i,,] %*% par[1:3]
       
@@ -159,6 +160,29 @@ lik <- function(par){
       l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
       
       
+      for (k in 1:5) {
+        #control vector
+        u = bilinearGrad(z, covlist) %*% par[1:3]
+      
+        #predicted state estimate
+        z_p = F_k %*% z + B %*% u
+      
+        #predicted estimate covariance 
+        P = F_k %*% P %*% t(F_k) + Q
+        
+        #innovation covariance
+        S = H %*% P %*% t(H) 
+      
+        #updated state estimate
+        z = z_p 
+      
+        #updated estimate covariance
+        P = P
+      
+        #adding likelihood contribution of i-th state
+        l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
+      }
+      
     }
   }
   return(l)
@@ -166,23 +190,26 @@ lik <- function(par){
 }
 
 
+
+
+
 #The likelihood is giving the using the negative value of Beta. Why?
 
 
 par = c(-3.72752931, -1.81252269,  0.08142107,  5.01331337)
 
-par2 = c(3.72752931, 1.81252269,  -0.08142107,  5.01331337)
-
+t1 = Sys.time()
 
 lik(par2)
 
 
-
+Sys.time() - t1
 
 
 #parameters for thinning
-thin = 2
-delta = dt*thin
+thin = 5
+#divided by six because of 5 extra points
+delta = dt*thin/6
 
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -190,11 +217,15 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 gradArray = bilinearGradArray(X, covlist)
 pars = c(0,0,0,1)
 
+
+t1 = Sys.time()
 o = optim(pars, lik)
+
+Sys.time() - t1
+
 o
 
 n = dim(alldat[[1]])[1]
-
 locs = X
 times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
 ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
