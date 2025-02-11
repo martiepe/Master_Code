@@ -145,7 +145,7 @@ lik <- function(par){
       y = X[i, ] - c(H %*% z_p)
       
       #innovation covariance
-      S = H %*% P %*% t(H) 
+      S = H %*% P %*% t(H) + R
       
       #optimal Kalman gain
       K = P %*% t(H) %*% solve(S)
