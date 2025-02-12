@@ -39,22 +39,6 @@ UD <- getUD(covariates=covlist, beta=beta)
 
 
 
-# Plot covariates
-ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
-                 legend.title = element_text(size=12), legend.text = element_text(size=12))
-c1plot <- plotRaster(rhabitToRaster(covlist[[1]]), scale.name = expression(c[1])) + ggtheme
-c2plot <- plotRaster(rhabitToRaster(covlist[[2]]), scale.name = expression(c[2])) + ggtheme
-UDplot <- plotRaster(rhabitToRaster(UD), scale.name = expression(pi)) + ggtheme
-
-pdf("sim2cov.pdf", width=12, height=3)
-grid.arrange(c1plot, c2plot, UDplot, nrow=1)
-dev.off()
-
-
-
-c1plot
-c2plot
-UDplot
 
 ###################
 ## Simulate data ##
