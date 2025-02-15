@@ -80,7 +80,63 @@ save.image(file='10Langevin_tracks.RData')
 load('10Langevin_tracks.RData')
 
 
+###########################
+## approximating Hessian ##
+###########################
+#distance between grid points
 
+
+hessian <- function(z, covlist){
+  n = floor(z[1])
+  m = floor(z[2])
+  
+  delta = 1
+  #lower left corner of square being interpolated upon
+  
+  C = covlist[[1]]$z*beta[1] + covlist[[2]]$z*beta[2] + covlist[[3]]$z*beta[3]
+  
+  f = C[(n+100):(n+103), (m+100):(m+103)]
+  
+  C = 0
+  F11 = matrix(c(f[2,2], f[2,3], f[3,2], f[3,3]), nrow = 2)
+  
+  
+  F21 = matrix(c((f[3, 2] - f[1, 2])/(2*delta),
+                 (f[3, 3] - f[1, 3])/(2*delta),
+                 (f[4, 2] - f[2, 2])/(2*delta),
+                 (f[4, 3] - f[2, 3])/(2*delta)), nrow = 2, byrow = T)
+  
+  
+  F12 = matrix(c((f[2, 3] - f[2, 1])/(2*delta),
+                 (f[2, 4] - f[2, 2])/(2*delta),
+                 (f[3, 3] - f[3, 1])/(2*delta),
+                 (f[3, 4] - f[3, 2])/(2*delta)), nrow = 2, byrow = T)
+  
+  
+  F22 = matrix(c((f[3,3] - f[3, 1] - f[1, 3] + f[1, 1])/(4*delta^2), 
+                 (f[3,4] - f[3, 2] - f[1, 4] + f[1, 2])/(4*delta^2),
+                 (f[4,3] - f[4, 1] - f[2, 3] + f[2, 1])/(4*delta^2),
+                 (f[4,4] - f[4, 2] - f[2, 4] + f[2, 2])/(4*delta^2)), nrow = 2, byrow = T)
+  
+  
+  F = cbind(rbind(F11, F21), rbind(F12, F22))
+  
+  K = matrix(c(1, 0, 0, 0, 0, 0, 1, 0, -3, 3, -2, -1, 2, -2, 1, 1), nrow = 4)
+  
+  A = t(K) %*% F %*% K
+  
+  
+  #the zero point of the polynomial is in our case the index of the bottom left vertex
+  Hxx = c(0, 0, 2, 6*(x-n)) %*% A %*% c(1, (y-m) , (y-m)^2, (y-m)^3)
+  
+  Hyy = c(1, (x-n), (x-n)^2, (x-n)^3) %*% A %*% c(0, 0, 2, 6*(y-m))
+  
+  Hxy = c(0, 1, 2*(x-n), 3*(x-n)^2) %*% A %*% c(0, 1, 2*(y-m), 3*(y-m)^2)
+  
+  H = cbind(rbind(Hxx, Hxy), rbind(Hxy, Hyy))
+  
+  return(H)
+}
 
 
 #################
@@ -176,6 +232,145 @@ lik <- function(par){
 
 
 
+#assumptions:
+#R = 0
+#F = I
+#H = I
+
+
+m = 20
+
+#simplified likelihood
+lik2 <- function(par){
+  #log-likelihood
+  l = 0
+  
+  for (j in 1:1) {
+    
+    #control matrix
+    B = diag(delta*par[4]/2,2,2)
+    
+    #defining transition covariance matrix
+    s = delta*par[4]
+    
+    #initial state
+    z = X[1, ]
+    
+    for (i in 2:nrow(X)) { 
+      #control vector
+      u = gradArray[i,,] %*% par[1:3]
+      
+      #predicted state estimate
+      z_p = z + B %*% u 
+      
+      #updated state estimate
+      z = X[i, ]
+      
+      #adding likelihood contribution of i-th state
+      l = l - dnorm(c(X[i, ] - z_p)[1], 0, (m+1)*s, log = T) - dnorm(c(X[i, ] - z_p)[2], 0, (m+1)*s, log = T)
+      
+      
+      for (k in 1:m) {
+        #control vector
+        u = bilinearGrad(z, covlist) %*% par[1:3]
+        
+        #predicted state estimate
+        z_p = z + B %*% u
+        
+        #updated state estimate
+        z = z_p 
+        
+        #adding likelihood contribution of i-th state
+        l = l - dnorm(c(X[i, ] - z_p)[1], 0, i*s, log = T) - dnorm(c(X[i, ] - z_p)[2], 0, i*s, log = T)
+      }
+      
+    }
+  }
+  return(l)
+  
+}
+
+
+#likelihood using extended kalman filter
+#assuming R = 0
+lik3 <- function(par){
+  #log-likelihood
+  l = 0
+  
+  for (j in 1:1) {
+    #defining transition covariance matrix
+    Q = diag(delta*par[4],2,2)
+    
+    #control matrix
+    B = diag(delta*par[4]/2,2,2)
+    
+    #initial covariance guess
+    P = 10*Q
+    
+    
+    #initial state
+    z = X[1, ]
+    
+    for (i in 2:nrow(X)) {
+      #control vector
+      u = gradArray[i,,] %*% par[1:3]
+      
+      F_k = diag(1,2,2) + hessian(z, covlist)
+      
+      #predicted state estimate
+      z_p = z + B %*% u 
+      
+      #predicted estimate covariance 
+      P = F_k %*% P %*% t(F_k) + Q
+      
+      #innovation
+      y = X[i, ] - c(H %*% z_p)
+      
+      #innovation covariance
+      S = P
+      
+      
+      #updated state estimate
+      z = z_p + y
+      
+      #updated estimate covariance
+      P = diag(0,2,2)
+      
+      #adding likelihood contribution of i-th state
+      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
+      
+      
+      for (k in 1:5) {
+        #control vector
+        u = bilinearGrad(z, covlist) %*% par[1:3]
+        
+        F_k = diag(1,2,2) + hessian(z, covlist)
+        
+        #predicted state estimate
+        z_p = F_k %*% z + B %*% u
+        
+        #predicted estimate covariance 
+        P = F_k %*% P %*% t(F_k) + Q
+        
+        #innovation covariance
+        S = P 
+        
+        #updated state estimate
+        z = z_p 
+        
+        #updated estimate covariance
+        P = P
+        
+        #adding likelihood contribution of i-th state
+        l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
+      }
+      
+    }
+  }
+  return(l)
+  
+}
+
 
 #The likelihood is giving the using the negative value of Beta. Why?
 
@@ -184,16 +379,19 @@ par = c(-3.72752931, -1.81252269,  0.08142107,  5.01331337)
 
 t1 = Sys.time()
 
-lik(par2)
-
+lik(par)
 
 Sys.time() - t1
 
+t1 = Sys.time()
 
+lik2(par)
+
+Sys.time() - t1
 #parameters for thinning
 thin = 5
 #divided by six because of 5 extra points
-delta = dt*thin/6
+delta = dt*thin/(m+1)
 
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -203,8 +401,7 @@ pars = c(0,0,0,1)
 
 
 t1 = Sys.time()
-o = optim(pars, lik)
-
+o = optim(pars, lik2)
 Sys.time() - t1
 
 o
@@ -220,7 +417,14 @@ fit$gamma2Hat
 
 
 
-
+########## USING PARALELL OPTIM ################
+library("optimParallel")
+cl <- makeCluster(detectCores()); setDefaultCluster(cl = cl)
+t1 = Sys.time()
+o2 <- optimParallel(par = par, fn = lik2, lower = c(-Inf, -Inf, -Inf, 0))
+Sys.time() - t1
+o2
+stopCluster(cl)
 
 
 
