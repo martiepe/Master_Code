@@ -84,39 +84,41 @@ load('10Langevin_tracks.RData')
 ## approximating Hessian ##
 ###########################
 #distance between grid points
+covlist
 
-
-hessian <- function(z, covlist){
+hessian <- function(z, covlist, par){
   n = floor(z[1])
   m = floor(z[2])
+  x = z[1]
+  y = z[2]
   
-  delta = 1
+  Delta = 1
   #lower left corner of square being interpolated upon
   
-  C = covlist[[1]]$z*beta[1] + covlist[[2]]$z*beta[2] + covlist[[3]]$z*beta[3]
+  f = covlist[[1]]$z[(n+100):(n+103), (m+100):(m+103)]*par[1] + 
+    covlist[[2]]$z[(n+100):(n+103), (m+100):(m+103)]*par[2] + 
+    covlist[[3]]$z[(n+100):(n+103), (m+100):(m+103)]*par[3]
   
-  f = C[(n+100):(n+103), (m+100):(m+103)]
-  
-  C = 0
-  F11 = matrix(c(f[2,2], f[2,3], f[3,2], f[3,3]), nrow = 2)
-  
-  
-  F21 = matrix(c((f[3, 2] - f[1, 2])/(2*delta),
-                 (f[3, 3] - f[1, 3])/(2*delta),
-                 (f[4, 2] - f[2, 2])/(2*delta),
-                 (f[4, 3] - f[2, 3])/(2*delta)), nrow = 2, byrow = T)
+
+  F11 = matrix(c(f[2,2], f[2,3], f[3,2], f[3,3]), nrow = 2, byrow = T)
   
   
-  F12 = matrix(c((f[2, 3] - f[2, 1])/(2*delta),
-                 (f[2, 4] - f[2, 2])/(2*delta),
-                 (f[3, 3] - f[3, 1])/(2*delta),
-                 (f[3, 4] - f[3, 2])/(2*delta)), nrow = 2, byrow = T)
+  F21 = matrix(c((f[3, 2] - f[1, 2])/(2*Delta),
+                 (f[3, 3] - f[1, 3])/(2*Delta),
+                 (f[4, 2] - f[2, 2])/(2*Delta),
+                 (f[4, 3] - f[2, 3])/(2*Delta)), nrow = 2, byrow = T)
   
   
-  F22 = matrix(c((f[3,3] - f[3, 1] - f[1, 3] + f[1, 1])/(4*delta^2), 
-                 (f[3,4] - f[3, 2] - f[1, 4] + f[1, 2])/(4*delta^2),
-                 (f[4,3] - f[4, 1] - f[2, 3] + f[2, 1])/(4*delta^2),
-                 (f[4,4] - f[4, 2] - f[2, 4] + f[2, 2])/(4*delta^2)), nrow = 2, byrow = T)
+  F12 = matrix(c((f[2, 3] - f[2, 1])/(2*Delta),
+                 (f[2, 4] - f[2, 2])/(2*Delta),
+                 (f[3, 3] - f[3, 1])/(2*Delta),
+                 (f[3, 4] - f[3, 2])/(2*Delta)), nrow = 2, byrow = T)
+  
+  
+  F22 = matrix(c((f[3,3] - f[3, 1] - f[1, 3] + f[1, 1])/(4*Delta^2), 
+                 (f[3,4] - f[3, 2] - f[1, 4] + f[1, 2])/(4*Delta^2),
+                 (f[4,3] - f[4, 1] - f[2, 3] + f[2, 1])/(4*Delta^2),
+                 (f[4,4] - f[4, 2] - f[2, 4] + f[2, 2])/(4*Delta^2)), nrow = 2, byrow = T)
   
   
   F = cbind(rbind(F11, F21), rbind(F12, F22))
@@ -137,6 +139,8 @@ hessian <- function(z, covlist){
   
   return(H)
 }
+
+
 
 
 #################
@@ -238,7 +242,6 @@ lik <- function(par){
 #H = I
 
 
-m = 20
 
 #simplified likelihood
 lik2 <- function(par){
@@ -258,7 +261,7 @@ lik2 <- function(par){
     
     for (i in 2:nrow(X)) { 
       #control vector
-      u = gradArray[i,,] %*% par[1:3]
+      u = bilinearGrad(z, covlist) %*% par[1:3]
       
       #predicted state estimate
       z_p = z + B %*% u 
@@ -279,9 +282,6 @@ lik2 <- function(par){
         
         #updated state estimate
         z = z_p 
-        
-        #adding likelihood contribution of i-th state
-        l = l - dnorm(c(X[i, ] - z_p)[1], 0, i*s, log = T) - dnorm(c(X[i, ] - z_p)[2], 0, i*s, log = T)
       }
       
     }
@@ -293,6 +293,7 @@ lik2 <- function(par){
 
 #likelihood using extended kalman filter
 #assuming R = 0
+delta = dt*thin/(m+1)
 lik3 <- function(par){
   #log-likelihood
   l = 0
@@ -307,31 +308,27 @@ lik3 <- function(par){
     #initial covariance guess
     P = 10*Q
     
-    
     #initial state
     z = X[1, ]
     
     for (i in 2:nrow(X)) {
       #control vector
-      u = gradArray[i,,] %*% par[1:3]
+      u = bilinearGrad(z, covlist) %*% par[1:3]
       
-      F_k = diag(1,2,2) + hessian(z, covlist)
       
+      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par)
+
       #predicted state estimate
       z_p = z + B %*% u 
       
       #predicted estimate covariance 
       P = F_k %*% P %*% t(F_k) + Q
       
-      #innovation
-      y = X[i, ] - c(H %*% z_p)
-      
       #innovation covariance
       S = P
       
-      
       #updated state estimate
-      z = z_p + y
+      z =  X[i, ]
       
       #updated estimate covariance
       P = diag(0,2,2)
@@ -340,14 +337,15 @@ lik3 <- function(par){
       l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
       
       
-      for (k in 1:5) {
+      for (k in 1:m) {
         #control vector
         u = bilinearGrad(z, covlist) %*% par[1:3]
         
-        F_k = diag(1,2,2) + hessian(z, covlist)
+        
+        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par) 
         
         #predicted state estimate
-        z_p = F_k %*% z + B %*% u
+        z_p = z + B %*% u
         
         #predicted estimate covariance 
         P = F_k %*% P %*% t(F_k) + Q
@@ -361,8 +359,6 @@ lik3 <- function(par){
         #updated estimate covariance
         P = P
         
-        #adding likelihood contribution of i-th state
-        l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
       }
       
     }
@@ -371,23 +367,72 @@ lik3 <- function(par){
   
 }
 
+#testing
+#likelihood of estimated parameters
+lik3(c(2.5326793,  1.2337152, -0.1744813,  5.0166797))
+#likelihood of actual parameters
+lik3(c(4,2,-0.1, 5))
 
-#The likelihood is giving the using the negative value of Beta. Why?
 
 
-par = c(-3.72752931, -1.81252269,  0.08142107,  5.01331337)
 
-t1 = Sys.time()
 
-lik(par)
 
-Sys.time() - t1
+#without missing data points
+#i want to use this to find out if this likelihood without missing points generate the proper estimates
 
-t1 = Sys.time()
+delta = dt*thin
+lik4 <- function(par){
+  #log-likelihood
+  l = 0
+  
+  for (j in 1:1) {
+    #defining transition covariance matrix
+    Q = diag(delta*par[4],2,2)
+    
+    #control matrix
+    B = diag(delta*par[4]/2,2,2)
+    
+    #initial covariance guess
+    P = 10*Q
+    
+    #initial state
+    z = X[1, ]
+    
+    for (i in 2:nrow(X)) {
+      #control vector
+      u = bilinearGrad(z, covlist) %*% par[1:3]
+      
+      
+      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par)
+      
+      #predicted state estimate
+      z_p = z + B %*% u 
+      
+      #predicted estimate covariance 
+      P = F_k %*% P %*% t(F_k) + Q
+      
+      #innovation covariance
+      S = P
+      
+      #updated state estimate
+      z =  X[i, ]
+      
+      #updated estimate covariance
+      P = diag(0,2,2)
+      
+      #adding likelihood contribution of i-th state
+      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
+    }
+  }
+  return(l)
+  
+}
 
-lik2(par)
 
-Sys.time() - t1
+
+
+m = 10
 #parameters for thinning
 thin = 5
 #divided by six because of 5 extra points
@@ -401,15 +446,19 @@ pars = c(0,0,0,1)
 
 
 t1 = Sys.time()
-o = optim(pars, lik2)
+o = optim(pars, lik3)
 Sys.time() - t1
-
 o
 
-n = dim(alldat[[1]])[1]
+
+
+
+#estimate using full data
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+gradArray = bilinearGradArray(X, covlist)
 locs = X
-times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
-ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
+times = alldat[[1]]$t
+ID = alldat[[1]]$ID
 fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
 
 fit$betaHat

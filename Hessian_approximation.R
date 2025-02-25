@@ -40,13 +40,13 @@ covlist
 ###########################
 
 hessian <- function(x, y, covlist){
+  #lower left corner of square being interpolated upon
   n = floor(x)
   m = floor(y)
   
   delta = 1
-  #lower left corner of square being interpolated upon
-  n = 5
-  m = 3
+  
+
   
   C = covlist[[1]]$z*beta[1] + covlist[[2]]$z*beta[2] + covlist[[3]]$z*beta[3]
   
