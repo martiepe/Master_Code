@@ -141,6 +141,59 @@ hessian <- function(z, covlist, par){
 }
 
 
+hessian2 <- function(z, covlist, par){
+  n = floor(z[1])
+  m = floor(z[2])
+  x = z[1]
+  y = z[2]
+  
+  Delta = 1
+  #lower left corner of square being interpolated upon
+  
+  f = covlist[[1]]$z[(n+100):(n+103), (m+100):(m+103)]*beta[1] + 
+    covlist[[2]]$z[(n+100):(n+103), (m+100):(m+103)]*beta[2] + 
+    covlist[[3]]$z[(n+100):(n+103), (m+100):(m+103)]*beta[3]
+  
+  
+  F11 = matrix(c(f[2,2], f[2,3], f[3,2], f[3,3]), nrow = 2, byrow = T)
+  
+  
+  F21 = matrix(c((f[3, 2] - f[1, 2])/(2*Delta),
+                 (f[3, 3] - f[1, 3])/(2*Delta),
+                 (f[4, 2] - f[2, 2])/(2*Delta),
+                 (f[4, 3] - f[2, 3])/(2*Delta)), nrow = 2, byrow = T)
+  
+  
+  F12 = matrix(c((f[2, 3] - f[2, 1])/(2*Delta),
+                 (f[2, 4] - f[2, 2])/(2*Delta),
+                 (f[3, 3] - f[3, 1])/(2*Delta),
+                 (f[3, 4] - f[3, 2])/(2*Delta)), nrow = 2, byrow = T)
+  
+  
+  F22 = matrix(c((f[3,3] - f[3, 1] - f[1, 3] + f[1, 1])/(4*Delta^2), 
+                 (f[3,4] - f[3, 2] - f[1, 4] + f[1, 2])/(4*Delta^2),
+                 (f[4,3] - f[4, 1] - f[2, 3] + f[2, 1])/(4*Delta^2),
+                 (f[4,4] - f[4, 2] - f[2, 4] + f[2, 2])/(4*Delta^2)), nrow = 2, byrow = T)
+  
+  
+  F = cbind(rbind(F11, F21), rbind(F12, F22))
+  
+  K = matrix(c(1, 0, 0, 0, 0, 0, 1, 0, -3, 3, -2, -1, 2, -2, 1, 1), nrow = 4)
+  
+  A = t(K) %*% F %*% K
+  
+  
+  #the zero point of the polynomial is in our case the index of the bottom left vertex
+  Hxx = c(0, 0, 2, 6*(x-n)) %*% A %*% c(1, (y-m) , (y-m)^2, (y-m)^3)
+  
+  Hyy = c(1, (x-n), (x-n)^2, (x-n)^3) %*% A %*% c(0, 0, 2, 6*(y-m))
+  
+  Hxy = c(0, 1, 2*(x-n), 3*(x-n)^2) %*% A %*% c(0, 1, 2*(y-m), 3*(y-m)^2)
+  
+  H = cbind(rbind(Hxx, Hxy), rbind(Hxy, Hyy))
+  
+  return(H)
+}
 
 
 #################
@@ -148,8 +201,8 @@ hessian <- function(z, covlist, par){
 #################
 
 #par: B_1, B_2, B_3, gamma^2
-
-
+#likelihood with missing observations using kalman filter
+delta = dt*thin/(m+1)
 lik <- function(par){
   #log-likelihood
   l = 0
@@ -177,7 +230,7 @@ lik <- function(par){
     
     for (i in 2:nrow(X)) {
       #control vector
-      u = gradArray[i,,] %*% par[1:3]
+      u = bilinearGrad(z, covlist) %*% par[1:3]
       
       #predicted state estimate
       z_p = F_k %*% z + B %*% u 
@@ -222,9 +275,6 @@ lik <- function(par){
       
         #updated estimate covariance
         P = P
-      
-        #adding likelihood contribution of i-th state
-        l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
       }
       
     }
@@ -234,8 +284,66 @@ lik <- function(par){
 }
 
 
-
-
+#likelihood without missing observations using kalman filter
+delta = dt*thin
+lik1 <- function(par){
+  #log-likelihood
+  l = 0
+  
+  for (j in 1:1) {
+    #observation matrix
+    H = diag(1,2,2)
+    
+    #transition matrix
+    F_k = diag(1,2,2)
+    #control matrix
+    B = diag(delta*par[4]/2,2,2)
+    #observation covariance
+    R = diag(0,2,2)
+    #defining transition covariance matrix
+    Q = diag(delta*par[4],2,2)
+    
+    
+    #initial covariance guess
+    P = 10*Q
+    
+    
+    #initial state
+    z = X[1, ]
+    
+    for (i in 2:nrow(X)) {
+      #control vector
+      u = bilinearGrad(z, covlist) %*% par[1:3]
+      
+      #predicted state estimate
+      z_p = F_k %*% z + B %*% u 
+      
+      #predicted estimate covariance 
+      P = F_k %*% P %*% t(F_k) + Q
+      
+      #innovation
+      y = X[i, ] - c(H %*% z_p)
+      
+      #innovation covariance
+      S = H %*% P %*% t(H) + R
+      
+      #optimal Kalman gain
+      K = P %*% t(H) %*% solve(S)
+      
+      #updated state estimate
+      z = z_p + K %*% y
+      
+      #updated estimate covariance
+      P = (diag(1, 2, 2) - K %*% H) %*% P
+      
+      #adding likelihood contribution of i-th state
+      l = l - dmvnorm(c(X[i, ] - H %*% z_p), mean = c(0,0), sigma = S, log = T)
+      
+    }
+  }
+  return(l)
+  
+}
 #assumptions:
 #R = 0
 #F = I
@@ -243,7 +351,7 @@ lik <- function(par){
 
 
 
-#simplified likelihood
+#simplified likelihood with missing data using kalman filter
 lik2 <- function(par){
   #log-likelihood
   l = 0
@@ -316,7 +424,7 @@ lik3 <- function(par){
       u = bilinearGrad(z, covlist) %*% par[1:3]
       
       
-      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par)
+      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian2(z, covlist, par)
 
       #predicted state estimate
       z_p = z + B %*% u 
@@ -325,7 +433,7 @@ lik3 <- function(par){
       P = F_k %*% P %*% t(F_k) + Q
       
       #innovation covariance
-      S = P
+      S = P 
       
       #updated state estimate
       z =  X[i, ]
@@ -342,7 +450,7 @@ lik3 <- function(par){
         u = bilinearGrad(z, covlist) %*% par[1:3]
         
         
-        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par) 
+        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian2(z, covlist, par) 
         
         #predicted state estimate
         z_p = z + B %*% u
@@ -367,20 +475,10 @@ lik3 <- function(par){
   
 }
 
-#testing
-#likelihood of estimated parameters
-lik3(c(2.5326793,  1.2337152, -0.1744813,  5.0166797))
-#likelihood of actual parameters
-lik3(c(4,2,-0.1, 5))
-
-
-
-
 
 
 #without missing data points
 #i want to use this to find out if this likelihood without missing points generate the proper estimates
-
 delta = dt*thin
 lik4 <- function(par){
   #log-likelihood
@@ -431,8 +529,8 @@ lik4 <- function(par){
 
 
 
-
-m = 10
+length(alldat[[1]]$x)
+m = 5
 #parameters for thinning
 thin = 5
 #divided by six because of 5 extra points
@@ -444,12 +542,14 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 gradArray = bilinearGradArray(X, covlist)
 pars = c(0,0,0,1)
 
+dim(X)
+
+
 
 t1 = Sys.time()
 o = optim(pars, lik4)
 Sys.time() - t1
 o
-
 
 
 
