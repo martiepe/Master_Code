@@ -401,7 +401,7 @@ lik2 <- function(par){
 
 #likelihood using extended kalman filter
 #assuming R = 0
-delta = dt*thin/(m)
+delta = dt*thin/(m+1)
 lik3 <- function(par){
   #log-likelihood
   l = 0
@@ -424,7 +424,7 @@ lik3 <- function(par){
       u = bilinearGrad(z, covlist) %*% par[1:3]
       
       
-      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par)
+      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian2(z, covlist, par)
 
       #predicted state estimate
       z_p = z + B %*% u 
@@ -450,7 +450,7 @@ lik3 <- function(par){
         u = bilinearGrad(z, covlist) %*% par[1:3]
         
         
-        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par) 
+        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian2(z, covlist, par) 
         
         #predicted state estimate
         z_p = z + B %*% u
@@ -529,7 +529,7 @@ lik4 <- function(par){
 
 
 
-
+length(alldat[[1]]$x)
 m = 5
 #parameters for thinning
 thin = 5
@@ -542,15 +542,12 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 gradArray = bilinearGradArray(X, covlist)
 pars = c(0,0,0,1)
 
+dim(X)
 
 
-(0:(nrow(X)%/%thin -1))*thin +1
-
-1:m
-delta
 
 t1 = Sys.time()
-o = optim(pars, lik1)
+o = optim(pars, lik3)
 Sys.time() - t1
 o
 
