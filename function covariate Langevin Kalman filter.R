@@ -10,9 +10,9 @@ library(mvtnorm)
 set.seed(1)
 
 
-#############################
-# Makin Covariate Functions #
-#############################
+##############################
+# Making Covariate Functions #
+##############################
 
 # Covariate maps parameters -------------------------------------------------
 
