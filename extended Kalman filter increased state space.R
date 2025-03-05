@@ -112,7 +112,7 @@ grad <- function(x, beta){
 
 
 gradArray <- function(x){
-  grad = matrix(c(gradient_cov1(x), gradient_cov2(x), gradient_cov3(x)), ncol = 3, nrow = 2)
+  matrix(c(gradient_cov1(x), gradient_cov2(x), gradient_cov3(x)), ncol = 3, nrow = 2)
 }
 
 
@@ -174,8 +174,9 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
 9.132915*7.953869 - 8.523028^2
+gradArray(c(0,0))
 
-
+hessian(c(0,0), c(0,0,0))
 
 ##############
 # Likelihood #
@@ -196,55 +197,53 @@ lik <- function(gammasq){
     B = diag(delta*gammasq/2,2,2)
     
     #initial covariance guess
-    P = bdiag(list(10*Q, diag(100, 3, 3)))
+    P = as.matrix(bdiag(list(10*Q, diag(10^6, 3, 3))))
     
     #initial state
-    z = c(X[1, ], 0, 0 , 0)
+    z = c(X[1, ], 1, 1, 1)
+    z_p = z
     
     
     for (i in 2:nrow(X)) {
       #control vector
       u = gradArray(z[1:2]) 
-      
       #transition matrix
       F_k = cbind(rbind(diag(1,2,2) + (delta*gammasq/2)*hessian(z[1:2], z[3:5]), matrix(rep(0, 6), nrow = 3, ncol = 2)),
                   rbind(u, diag(1,3,3)))
-      
       #predicted state estimate
-      z_p = c(z[1:2] + B %*% u %*% z[3:5], z[3:5])
+      z_p[1:2] = z[1:2] + B %*% u %*% z[3:5]
       
       #predicted estimate covariance 
-      P = F_k %*% P %*% t(F_k) + bdiag(list(Q, diag(0, 3, 3)))
+      P = F_k %*% P %*% t(F_k) + as.matrix(bdiag(list(Q, diag(0, 3, 3))))
       
-      print(P[1:2, 1:2])
       #updated state estimate
-      z =  c(X[i, ], P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% (X[i, ] - z_p[1:2]))
+      z =  c(X[i, ], z_p[3:5] + as.vector(P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% (X[i, ] - z_p[1:2])))
       
-
+      print(z[3:5])
+      print(P)
       #updated estimate covariance
-      P = bdiag(list(diag(0,2,2), P[1:3, 1:3] - P[1:3, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 1:3]))
+      P = as.matrix(bdiag(list(diag(0,2,2), P[1:3, 1:3] - P[1:3, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 1:3])))
       
       #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = P[1:2, 1:2], log = T)
+      l = l - dmvnorm(c(X[i, ] - z_p[1:2]), mean = c(0,0), sigma = as.matrix(P[1:2, 1:2]) , log = T)
       
       
       for (k in 1:m) {
         #control vector
         u = gradArray(z[1:2]) 
-        
         #transition matrix
         F_k = cbind(rbind(diag(1,2,2) + (delta*gammasq/2)*hessian(z[1:2], z[3:5]), matrix(rep(0, 6), nrow = 3, ncol = 2)),
                     rbind(u, diag(1,3,3)))
         
         #predicted state estimate
         z_p = c(z[1:2] + B %*% u %*% z[3:5], z[3:5])
-        
+
         #predicted estimate covariance 
-        P = F_k %*% P %*% t(F_k) + bdiag(list(Q, diag(0, 3, 3)))
+        P = F_k %*% P %*% t(F_k) + as.matrix(bdiag(list(Q, diag(0, 3, 3))))
         
         #updated state estimate
         z = z_p 
-        
+        #print(z)
         #updated estimate covariance
         P = P
         
@@ -252,20 +251,21 @@ lik <- function(gammasq){
       
     }
   }
+  
+  print(z[3:5])
   return(l)
   
 }
 
-
+lik(1)
 
 ##############
 # Estimation #
 ##############
 
 
-pars = c(0,0,0,1)
 t1 = Sys.time()
-o = optim(pars, lik)
+o = optim(c(1), lik, method = "Brent", lower = 0, upper = 10^6)
 Sys.time() - t1
 o
 
