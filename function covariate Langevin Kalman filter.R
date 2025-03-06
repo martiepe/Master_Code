@@ -173,7 +173,7 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 # Likelihood #
 ##############
 
-m = 5
+m = 50
 delta = dt*thin/(m+1)
 
 #likelihood using extended kalman filter
@@ -252,7 +252,9 @@ lik <- function(par){
   
 }
 
+lik(c(-0.73546697,  0.20414796,  0.05169985,  1.01772266))
 
+lik(c(-1, 0.5, 0.05, 1))
 
 
 
