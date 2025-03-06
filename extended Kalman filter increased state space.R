@@ -7,6 +7,7 @@ library(parallel)
 library(reshape2)
 library(gridExtra)
 library(mvtnorm)
+library(Matrix)
 set.seed(1)
 
 
@@ -54,15 +55,15 @@ exp_sin_second_derivative <- function(x, a, sigma, omega){
 
 hessian <- function(x, beta){
   beta[1]*matrix(c(alpha1^2 * exp_sin_second_derivative(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_function(x[2], as1[2], sigs1[2], oms1[2]),
-           alpha1^2 * exp_sin_derivative(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_derivative(x[2], as1[2], sigs1[2], oms1[2]),
-           alpha1^2 * exp_sin_derivative(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_derivative(x[2], as1[2], sigs1[2], oms1[2]),
-           alpha1^2 * exp_sin_function(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_second_derivative(x[2], as1[2], sigs1[2], oms1[2])),
-         ncol = 2) +
+                   alpha1^2 * exp_sin_derivative(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_derivative(x[2], as1[2], sigs1[2], oms1[2]),
+                   alpha1^2 * exp_sin_derivative(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_derivative(x[2], as1[2], sigs1[2], oms1[2]),
+                   alpha1^2 * exp_sin_function(x[1], a = as1[1], sigma = sigs1[1], omega = oms1[1]) * exp_sin_second_derivative(x[2], as1[2], sigs1[2], oms1[2])),
+                 ncol = 2) +
     beta[2]*matrix(c(alpha2^2 * exp_sin_second_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_function(x[2], as2[2], sigs2[2], oms2[2]),
-             alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
-             alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
-             alpha2^2 * exp_sin_function(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_second_derivative(x[2], as2[2], sigs2[2], oms2[2])),
-           ncol = 2) +
+                     alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
+                     alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
+                     alpha2^2 * exp_sin_function(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_second_derivative(x[2], as2[2], sigs2[2], oms2[2])),
+                   ncol = 2) +
     beta[3]*diag(2,2,2)
   
 }
@@ -108,6 +109,12 @@ gradient_list = list(gradient_cov1, gradient_cov2, gradient_cov3)
 grad <- function(x, beta){
   beta[1]*gradient_cov1(x) +  beta[2]*gradient_cov2(x) +  beta[3]*gradient_cov3(x)
 }
+
+
+gradArray <- function(x){
+  matrix(c(gradient_cov1(x), gradient_cov2(x), gradient_cov3(x)), ncol = 3, nrow = 2)
+}
+
 
 
 # Movement parameters
@@ -166,81 +173,77 @@ X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
 X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
+9.132915*7.953869 - 8.523028^2
+gradArray(c(0,0))
 
-
+hessian(c(0,0), c(0,0,0))
 
 ##############
 # Likelihood #
 ##############
 
-m = 50
+m = 5
 delta = dt*thin/(m+1)
 
 #likelihood using extended kalman filter
-#assuming R = 0
-
-lik <- function(par){
+lik <- function(gammasq){
   #log-likelihood
   l = 0
-  
   for (j in 1:1) {
     #defining transition covariance matrix
-    Q = diag(delta*par[4],2,2)
+    Q = diag(delta*gammasq,2,2)
     
     #control matrix
-    B = diag(delta*par[4]/2,2,2)
+    B = diag(delta*gammasq/2,2,2)
     
     #initial covariance guess
-    P = 10*Q
+    P = as.matrix(bdiag(list(10*Q, diag(10^6, 3, 3))))
     
     #initial state
-    z = X[1, ]
+    z = c(X[1, ], 1, 1, 1)
+    z_p = z
+    
     
     for (i in 2:nrow(X)) {
       #control vector
-      u = grad(z, par[1:3]) 
-      
-      
-      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3])
-      
+      u = gradArray(z[1:2]) 
+      #transition matrix
+      F_k = cbind(rbind(diag(1,2,2) + (delta*gammasq/2)*hessian(z[1:2], z[3:5]), matrix(rep(0, 6), nrow = 3, ncol = 2)),
+                  rbind(u, diag(1,3,3)))
       #predicted state estimate
-      z_p = z + B %*% u 
+      z_p[1:2] = z[1:2] + B %*% u %*% z[3:5]
       
       #predicted estimate covariance 
-      P = F_k %*% P %*% t(F_k) + Q
-      
-      #innovation covariance
-      S = P 
+      P = F_k %*% P %*% t(F_k) + as.matrix(bdiag(list(Q, diag(0, 3, 3))))
       
       #updated state estimate
-      z =  X[i, ]
+      z =  c(X[i, ], z_p[3:5] + as.vector(P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% (X[i, ] - z_p[1:2])))
       
+      print(z[3:5])
+      print(P)
       #updated estimate covariance
-      P = diag(0,2,2)
+      P = as.matrix(bdiag(list(diag(0,2,2), P[1:3, 1:3] - P[1:3, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 1:3])))
       
       #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
+      l = l - dmvnorm(c(X[i, ] - z_p[1:2]), mean = c(0,0), sigma = as.matrix(P[1:2, 1:2]) , log = T)
       
       
       for (k in 1:m) {
         #control vector
-        u = grad(z, par[1:3]) 
-        
-        
-        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3]) 
+        u = gradArray(z[1:2]) 
+        #transition matrix
+        F_k = cbind(rbind(diag(1,2,2) + (delta*gammasq/2)*hessian(z[1:2], z[3:5]), matrix(rep(0, 6), nrow = 3, ncol = 2)),
+                    rbind(u, diag(1,3,3)))
         
         #predicted state estimate
-        z_p = z + B %*% u
-        
+        z_p = c(z[1:2] + B %*% u %*% z[3:5], z[3:5])
+
         #predicted estimate covariance 
-        P = F_k %*% P %*% t(F_k) + Q
-        
-        #innovation covariance
-        S = P 
+        P = F_k %*% P %*% t(F_k) + as.matrix(bdiag(list(Q, diag(0, 3, 3))))
         
         #updated state estimate
         z = z_p 
-        
+        #print(z)
         #updated estimate covariance
         P = P
         
@@ -248,24 +251,21 @@ lik <- function(par){
       
     }
   }
+  
+  print(z[3:5])
   return(l)
   
 }
 
-lik(c(-0.73546697,  0.20414796,  0.05169985,  1.01772266))
-
-lik(c(-1, 0.5, 0.05, 1))
-
-
+lik(1)
 
 ##############
 # Estimation #
 ##############
 
 
-pars = c(0,0,0,1)
 t1 = Sys.time()
-o = optim(pars, lik)
+o = optim(c(1), lik, method = "Brent", lower = 0, upper = 10^6)
 Sys.time() - t1
 o
 
@@ -282,6 +282,22 @@ fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
 
 fit$betaHat
 fit$gamma2Hat
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -84,7 +84,7 @@ load('10Langevin_tracks.RData')
 ## approximating Hessian ##
 ###########################
 #distance between grid points
-covlist
+
 
 hessian <- function(z, covlist, par){
   n = floor(z[1])
@@ -547,7 +547,7 @@ dim(X)
 
 
 t1 = Sys.time()
-o = optim(pars, lik3)
+o = optim(pars, lik4)
 Sys.time() - t1
 o
 
