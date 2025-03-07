@@ -123,7 +123,7 @@ beta_true <- c(beta1 = -1, beta2 = 0.5, beta3 = 0.05)
 #####################
 
 #max time for track
-Tmax <- 5000
+Tmax <- 5000*20
 #increment between times
 dt <- 0.01
 #time grid
@@ -159,7 +159,7 @@ for(zoo in 1:ntrack)
 ############
 
 #parameters for thinning
-thin = 5
+thin = 20
 #divided by six because of 5 extra points
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -173,7 +173,7 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 # Likelihood #
 ##############
 
-m = 50
+m = 40
 delta = dt*thin/(m+1)
 
 #likelihood using extended kalman filter
@@ -219,7 +219,7 @@ lik <- function(par){
       P = diag(0,2,2)
       
       #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
+      l = l + dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
       
       
       for (k in 1:m) {
