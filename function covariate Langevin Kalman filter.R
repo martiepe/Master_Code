@@ -1,5 +1,7 @@
 # Load packages
-library(Rhabit)
+# library(Rhabit)
+library(here)
+source(here("functions/Rhabit_functions.R"))
 library(raster)
 library(ggplot2)
 library(viridis)
