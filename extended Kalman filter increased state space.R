@@ -223,7 +223,7 @@ lik <- function(gammasq){
       P = as.matrix(bdiag(list(diag(0,2,2), P[3:5, 3:5] - P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 3:5])))
       
       #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p[1:2]), mean = c(0,0), sigma = as.matrix(P[1:2, 1:2]) , log = T)
+      l = l + dmvnorm(c(X[i, ] - z_p[1:2]), mean = c(0,0), sigma = as.matrix(P[1:2, 1:2]) , log = T)
       
       
       for (k in 1:m) {

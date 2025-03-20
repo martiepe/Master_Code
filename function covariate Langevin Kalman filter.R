@@ -1,5 +1,7 @@
 # Load packages
-library(Rhabit)
+# library(Rhabit)
+library(here)
+source(here("functions/Rhabit_functions.R"))
 library(raster)
 library(ggplot2)
 library(viridis)
@@ -7,8 +9,7 @@ library(parallel)
 library(reshape2)
 library(gridExtra)
 library(mvtnorm)
-set.seed(1)
-
+library(optimParallel)
 
 ##############################
 # Making Covariate Functions #
@@ -27,6 +28,9 @@ as2 <- c(-2, pi / 2)
 sigs1 <- sigs2 <- rep(40, 2)
 oms1 <- c(0.6, 0.2)
 oms2 <- c(0.1, 0.5)
+
+
+
 
 # Global Functions -----------------------------------------------------------
 
@@ -79,6 +83,7 @@ exp_sin_gradient <- function(x, as, sigmas, omegas, alpha){
 }
 
 
+
 # Functions for covariates -----------------------------------------
 
 fun_cov1 <- function(x) 
@@ -123,7 +128,7 @@ beta_true <- c(beta1 = -1, beta2 = 0.5, beta3 = 0.05)
 #####################
 
 #max time for track
-Tmax <- 5000
+Tmax <- 5000*10
 #increment between times
 dt <- 0.01
 #time grid
@@ -159,7 +164,7 @@ for(zoo in 1:ntrack)
 ############
 
 #parameters for thinning
-thin = 5
+thin = 10
 #divided by six because of 5 extra points
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -173,13 +178,12 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 # Likelihood #
 ##############
 
-m = 5
-delta = dt*thin/(m+1)
+
 
 #likelihood using extended kalman filter
 #assuming R = 0
 
-lik <- function(par){
+lik <- function(par, delta, X, grad){
   #log-likelihood
   l = 0
   
@@ -219,7 +223,7 @@ lik <- function(par){
       P = diag(0,2,2)
       
       #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
+      l = l + dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
       
       
       for (k in 1:m) {
@@ -253,21 +257,47 @@ lik <- function(par){
 }
 
 
-
-
-
 ##############
 # Estimation #
 ##############
 
+m = 1
+delta = dt*thin/(m+1)
 
-pars = c(0,0,0,1)
 t1 = Sys.time()
-o = optim(pars, lik)
+cl <- makeCluster(4)     # set the number of processor cores
+clusterExport(cl, varlist = c("lik", "grad", "hessian", "dmvnorm", "gradient_cov1", "gradient_cov1", "gradient_cov2", "gradient_cov3", "exp_sin_gradient", "exp_sin_derivative", "exp_sin_function", "exp_sin_second_derivative",
+                             "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o1 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
-o
 
 
+m = 10
+delta = dt*thin/(m+1)
+
+t1 = Sys.time()
+cl <- makeCluster(4)     # set the number of processor cores
+clusterExport(cl, varlist = c("lik", "grad", "hessian", "dmvnorm", "gradient_cov1", "gradient_cov1", "gradient_cov2", "gradient_cov3", "exp_sin_gradient", "exp_sin_derivative", "exp_sin_function", "exp_sin_second_derivative",
+                              "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o2 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
+
+
+m = 250
+delta = dt*thin/(m+1)
+
+t1 = Sys.time()
+cl <- makeCluster(5)     # set the number of processor cores
+clusterExport(cl, varlist = c("lik", "grad", "hessian", "dmvnorm", "gradient_cov1", "gradient_cov1", "gradient_cov2", "gradient_cov3", "exp_sin_gradient", "exp_sin_derivative", "exp_sin_function", "exp_sin_second_derivative",
+                              "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o3 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
 
 
 #estimate using full data
