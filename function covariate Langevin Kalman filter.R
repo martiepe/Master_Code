@@ -47,10 +47,10 @@ exp_sin_derivative <- function(x, a, sigma, omega){
 
 # main second derivative (1d)
 exp_sin_second_derivative <- function(x, a, sigma, omega){
-  -2 / sigma * exp_sin_function(x, a, sigma, omega) 
-  - 2 * (x - a) / sigma * exp_sin_derivative(x, a, sigma, omega) 
-  - 2 * omega * (x - a) / sigma * exp(-(x - a)^2 / sigma) * cos(omega * (x -a))
-  - omega^2 * exp_sin_function(x, a, sigma, omega)
+  -2 / sigma * exp_sin_function(x, a, sigma, omega) -
+    2 * (x - a) / sigma * exp_sin_derivative(x, a, sigma, omega) -
+    2 * omega * (x - a) / sigma * exp(-(x - a)^2 / sigma) * cos(omega * (x -a)) -
+    omega^2 * exp_sin_function(x, a, sigma, omega)
 }
 
 
@@ -252,10 +252,13 @@ lik <- function(par, delta, X, grad){
       
     }
   }
-  return(l)
   
+  return(-l)
 }
 
+
+lik(c(-1, 0.5, 0.05, 1))
+lik(c(0, 0, 0, 1))
 
 ##############
 # Estimation #
