@@ -167,4 +167,33 @@ t1 = Sys.time()
 optim(c(1,1,1,1), lik)
 Sys.time() - t1
 
+library(optimParallel)
+t1 = Sys.time()
+cl <- makeCluster(5)     # set the number of processor cores
+clusterExport(cl, varlist = c("lik", "grad", "dmvnorm", "X", "UD_value", "getUD", "Delta", "covlist", "lim"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o2 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
+o2
+
+
+beta
+lik(c(beta, 5))
+lik(c(0.003425801,  0.001479025, -0.034209244,  5.008598236))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
