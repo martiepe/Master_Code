@@ -2,6 +2,7 @@
 # library(Rhabit)
 library(here)
 source(here("functions/Rhabit_functions.R"))
+library(Rhabit)
 library(raster)
 library(ggplot2)
 library(viridis)
@@ -47,10 +48,10 @@ exp_sin_derivative <- function(x, a, sigma, omega){
 
 # main second derivative (1d)
 exp_sin_second_derivative <- function(x, a, sigma, omega){
-  -2 / sigma * exp_sin_function(x, a, sigma, omega) -
-    2 * (x - a) / sigma * exp_sin_derivative(x, a, sigma, omega) -
-    2 * omega * (x - a) / sigma * exp(-(x - a)^2 / sigma) * cos(omega * (x -a)) -
-    omega^2 * exp_sin_function(x, a, sigma, omega)
+  -2 / sigma * exp_sin_function(x, a, sigma, omega) - 
+  2 * (x - a) / sigma * exp_sin_derivative(x, a, sigma, omega) - 
+  2 * omega * (x - a) / sigma * exp(-(x - a)^2 / sigma) * cos(omega * (x -a))- 
+  omega^2 * exp_sin_function(x, a, sigma, omega)
 }
 
 
@@ -128,7 +129,7 @@ beta_true <- c(beta1 = -1, beta2 = 0.5, beta3 = 0.05)
 #####################
 
 #max time for track
-Tmax <- 5000*10
+Tmax <- 5000
 #increment between times
 dt <- 0.01
 #time grid
@@ -164,12 +165,11 @@ for(zoo in 1:ntrack)
 ############
 
 #parameters for thinning
-thin = 10
+thin = 5
 #divided by six because of 5 extra points
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
 X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
-
 
 
 
@@ -184,6 +184,11 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 #assuming R = 0
 
 lik <- function(par, delta, X, grad){
+  
+  func <- function(x){
+    return(par[1]*fun_cov1(x) + par[2]*fun_cov2(x) + par[3]*fun_cov3(x))
+  }
+
   #log-likelihood
   l = 0
   
@@ -205,7 +210,7 @@ lik <- function(par, delta, X, grad){
       u = grad(z, par[1:3]) 
       
       
-      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3])
+      F_k = diag(1,2,2) + (delta*par[4]/2)*numDeriv::hessian(func, z)
       
       #predicted state estimate
       z_p = z + B %*% u 
@@ -231,7 +236,7 @@ lik <- function(par, delta, X, grad){
         u = grad(z, par[1:3]) 
         
         
-        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3]) 
+        F_k = diag(1,2,2) + (delta*par[4]/2)*numDeriv::hessian(func, z)
         
         #predicted state estimate
         z_p = z + B %*% u
@@ -251,14 +256,9 @@ lik <- function(par, delta, X, grad){
       }
       
     }
-  }
-  
-  return(-l)
+  }  
+  return(min(-l, 1e7))
 }
-
-
-lik(c(-1, 0.5, 0.05, 1))
-lik(c(0, 0, 0, 1))
 
 ##############
 # Estimation #
@@ -290,18 +290,35 @@ setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 
 
-m = 250
+m = 20
 delta = dt*thin/(m+1)
 
 t1 = Sys.time()
 cl <- makeCluster(5)     # set the number of processor cores
 clusterExport(cl, varlist = c("lik", "grad", "hessian", "dmvnorm", "gradient_cov1", "gradient_cov1", "gradient_cov2", "gradient_cov3", "exp_sin_gradient", "exp_sin_derivative", "exp_sin_function", "exp_sin_second_derivative",
-                              "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m"))
+                              "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m", "fun_cov1", "fun_cov2", "fun_cov3"))
 setDefaultCluster(cl=cl) # set 'cl' as default cluster
 o3 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
 setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
+o3
 
+
+
+x = c(9,4)
+func <- function(x){
+  return(fun_cov1(x)+fun_cov2(x)+fun_cov3(x))
+}
+par = c(1,1,1)
+numDeriv::hessian(func, x, par)
+
+hessian(x, c(1,1,1))
+
+
+beta_true
+t1 = Sys.time()
+lik(c(1,1,1,1), delta, X, grad)
+Sys.time() - t1
 
 #estimate using full data
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
