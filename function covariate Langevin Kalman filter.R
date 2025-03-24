@@ -67,7 +67,7 @@ hessian <- function(x, beta){
              alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
              alpha2^2 * exp_sin_derivative(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_derivative(x[2], as2[2], sigs2[2], oms2[2]),
              alpha2^2 * exp_sin_function(x[1], a = as2[1], sigma = sigs2[1], omega = oms2[1]) * exp_sin_second_derivative(x[2], as2[2], sigs2[2], oms2[2])),
-           ncol = 2) +
+           ncol = 2) -
     beta[3]*diag(2,2,2)
   
 }
@@ -312,7 +312,7 @@ func <- function(x){
   return(fun_cov1(x)+fun_cov2(x)+fun_cov3(x))
 }
 par = c(1,1,1)
-numDeriv::hessian(func, x, par)
+numDeriv::hessian(func, x)
 
 hessian(x, c(1,1,1))
 
