@@ -210,7 +210,7 @@ lik <- function(par, delta, X, grad){
       u = grad(z, par[1:3]) 
       
       
-      F_k = diag(1,2,2) + (delta*par[4]/2)*numDeriv::hessian(func, z)
+      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3])
       
       #predicted state estimate
       z_p = z + B %*% u 
@@ -236,7 +236,7 @@ lik <- function(par, delta, X, grad){
         u = grad(z, par[1:3]) 
         
         
-        F_k = diag(1,2,2) + (delta*par[4]/2)*numDeriv::hessian(func, z)
+        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, par[1:3])
         
         #predicted state estimate
         z_p = z + B %*% u
@@ -322,9 +322,16 @@ t1 = Sys.time()
 lik(c(1,1,1,1), delta, X, grad)
 Sys.time() - t1
 
-#estimate using full data
-X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
-gradArray = bilinearGradArray(X, covlist)
+#estimate using thinned data
+
+
+gradArray <- array(rep(0, dim(X)[1]*2*3), c(dim(X)[1], 2, 3))
+
+for (i in 1:(dim(X)[1])) {
+  gradArray[i,1:2, 1] = gradient_cov1(X[i, ])
+  gradArray[i,1:2, 2] = gradient_cov2(X[i, ])
+  gradArray[i,1:2, 3] = gradient_cov3(X[i, ])
+}
 locs = X
 times = alldat[[1]]$t
 ID = alldat[[1]]$ID
@@ -334,6 +341,25 @@ fit$betaHat
 fit$gamma2Hat
 
 
+
+
+#estimate using full data
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+gradarray <- array(rep(0, dim(X)[1]*2*3), c(dim(X)[1], 2, 3))
+
+for (i in 1:(dim(X)[1])) {
+  gradarray[i,1:2, 1] = gradient_cov1(X[i, ])
+  gradarray[i,1:2, 2] = gradient_cov2(X[i, ])
+  gradarray[i,1:2, 3] = gradient_cov3(X[i, ])
+}
+
+locs = X
+times = alldat[[1]]$t
+ID = alldat[[1]]$ID
+fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
+
+fit$betaHat
+fit$gamma2Hat
 
 
 
