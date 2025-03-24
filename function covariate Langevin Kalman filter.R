@@ -165,7 +165,7 @@ for(zoo in 1:ntrack)
 ############
 
 #parameters for thinning
-thin = 5
+thin = 250
 #divided by six because of 5 extra points
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -261,7 +261,7 @@ lik <- function(par, delta, X, grad){
   
 }
 
-lik(c(1,1,1,1), delta, X, grad)
+
 ##############
 # Estimation #
 ##############
@@ -292,11 +292,11 @@ setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 
 
-m = 20
+m = 500
 delta = dt*thin/(m+1)
 
 t1 = Sys.time()
-cl <- makeCluster(5)     # set the number of processor cores
+cl <- makeCluster(12)     # set the number of processor cores
 clusterExport(cl, varlist = c("lik", "grad", "hessian", "dmvnorm", "gradient_cov1", "gradient_cov1", "gradient_cov2", "gradient_cov3", "exp_sin_gradient", "exp_sin_derivative", "exp_sin_function", "exp_sin_second_derivative",
                               "IP1", "DP1", "CP1", "FP1", "IP2", "DP2", "CP2", "FP2", "alpha1", "as1", "sigs1", "oms1", "alpha2", "as2", "sigs2", "oms2", "m", "fun_cov1", "fun_cov2", "fun_cov3"))
 setDefaultCluster(cl=cl) # set 'cl' as default cluster
@@ -307,7 +307,7 @@ o3
 
 
 
-x = c(9,4)
+#testing hessian function
 func <- function(x){
   return(fun_cov1(x)+fun_cov2(x)+fun_cov3(x))
 }
@@ -317,14 +317,12 @@ numDeriv::hessian(func, x)
 hessian(x, c(1,1,1))
 
 
-beta_true
-t1 = Sys.time()
-lik(c(1,1,1,1), delta, X, grad)
-Sys.time() - t1
 
 #estimate using thinned data
-
-
+thin = 250
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+N = nrow(X)
+X = X[(0:(N%/%thin -1))*thin +1, ]
 gradArray <- array(rep(0, dim(X)[1]*2*3), c(dim(X)[1], 2, 3))
 
 for (i in 1:(dim(X)[1])) {
@@ -333,8 +331,8 @@ for (i in 1:(dim(X)[1])) {
   gradArray[i,1:2, 3] = gradient_cov3(X[i, ])
 }
 locs = X
-times = alldat[[1]]$t
-ID = alldat[[1]]$ID
+times = (alldat[[1]]$t)[(0:(N%/%thin -1))*thin +1]
+ID = (alldat[[1]]$ID)[(0:(N%/%thin -1))*thin +1]
 fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
 
 fit$betaHat
@@ -345,12 +343,12 @@ fit$gamma2Hat
 
 #estimate using full data
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
-gradarray <- array(rep(0, dim(X)[1]*2*3), c(dim(X)[1], 2, 3))
+gradArray <- array(rep(0, dim(X)[1]*2*3), c(dim(X)[1], 2, 3))
 
 for (i in 1:(dim(X)[1])) {
-  gradarray[i,1:2, 1] = gradient_cov1(X[i, ])
-  gradarray[i,1:2, 2] = gradient_cov2(X[i, ])
-  gradarray[i,1:2, 3] = gradient_cov3(X[i, ])
+  gradArray[i,1:2, 1] = gradient_cov1(X[i, ])
+  gradArray[i,1:2, 2] = gradient_cov2(X[i, ])
+  gradArray[i,1:2, 3] = gradient_cov3(X[i, ])
 }
 
 locs = X
