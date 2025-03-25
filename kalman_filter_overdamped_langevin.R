@@ -7,6 +7,7 @@ library(parallel)
 library(reshape2)
 library(gridExtra)
 library(mvtnorm)
+library(optimParallel)
 set.seed(1)
 
 
@@ -74,10 +75,17 @@ for(zoo in 1:ntrack)
   alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
 
 
+#####################
+## Thinning Tracks ##
+#####################
 
-save.image(file='10Langevin_tracks.RData')
+thin = 5
+#divided by six because of 5 extra points
+delta = dt*thin/(m+1)
 
-load('10Langevin_tracks.RData')
+
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
 ###########################
@@ -529,20 +537,18 @@ lik4 <- function(par){
 
 
 
-length(alldat[[1]]$x)
+
+########## USING PARALELL OPTIM ################
 m = 5
-#parameters for thinning
-thin = 5
-#divided by six because of 5 extra points
 delta = dt*thin/(m+1)
-
-
-X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
-X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
-gradArray = bilinearGradArray(X, covlist)
-pars = c(0,0,0,1)
-
-dim(X)
+t1 = Sys.time()
+cl <- makeCluster(12)     # set the number of processor cores
+clusterExport(cl, varlist = c("delta", "X", "bilinearGrad", "hessian", "covlist", "dmvnorm", "m", "lik3"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o2 = optimParallel(par=c(0,0,0,1), fn=lik3, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
+o2
 
 
 
@@ -565,15 +571,6 @@ fit$betaHat
 fit$gamma2Hat
 
 
-
-########## USING PARALELL OPTIM ################
-library("optimParallel")
-cl <- makeCluster(detectCores()); setDefaultCluster(cl = cl)
-t1 = Sys.time()
-o2 <- optimParallel(par = par, fn = lik2, lower = c(-Inf, -Inf, -Inf, 0))
-Sys.time() - t1
-o2
-stopCluster(cl)
 
 
 
