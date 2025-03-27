@@ -45,9 +45,9 @@ UD <- getUD(covariates=covlist, beta=beta)
 ## Simulate data ##
 ###################
 #max time for track
-Tmax <- 5000
+Tmax <- 10000
 #increment between times
-dt <- 0.01
+dt <- 0.001
 #time grid
 time <- seq(0, Tmax, by = dt)
 #number of tracks to be generated
@@ -79,7 +79,7 @@ for(zoo in 1:ntrack)
 ## Thinning Tracks ##
 #####################
 
-thin = 5
+thin = 50
 #divided by six because of 5 extra points
 delta = dt*thin/(m+1)
 
@@ -539,7 +539,7 @@ lik4 <- function(par){
 
 
 ########## USING PARALELL OPTIM ################
-m = 5
+m = 20
 delta = dt*thin/(m+1)
 t1 = Sys.time()
 cl <- makeCluster(12)     # set the number of processor cores
@@ -550,7 +550,7 @@ setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 o2
 
-
+beta
 
 t1 = Sys.time()
 o = optim(pars, lik4)
