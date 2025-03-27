@@ -8,7 +8,6 @@ library(parallel)
 library(reshape2)
 library(gridExtra)
 library(mvtnorm)
-set.seed(1)
 
 
 
@@ -19,7 +18,7 @@ set.seed(1)
 ## Define covariates ##
 #######################
 # Generate two random covariates
-lim <- c(-1, 1, -1, 1)*150
+lim <- c(-1, 1, -1, 1)*100
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -47,11 +46,11 @@ UD <- getUD(covariates=covlist, beta=beta)
 #########################
 ## Simulate track data ##
 #########################
-Tmax <- 5000
+Tmax <- 200
 dt <- 0.01
 time <- seq(0, Tmax, by = dt)
-ntrack <- 10
-speed <- 10
+ntrack <- 1
+speed <- 5
 
 # Time grids
 alltimes <- list()
@@ -68,21 +67,28 @@ alldat <- lapply(alltimes, function(times) {
 for(zoo in 1:ntrack)
   alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
 
+##################testing what length to use ##############
 
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+gradArray = bilinearGradArray(X, covlist)
+locs = X
+times = alldat[[1]]$t
+ID = alldat[[1]]$ID
+fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
+
+fit$betaHat
+fit$gamma2Hat
+
+beta
 
 #plotting trails
-
+{
 ggplot()+
   geom_path(aes(alldat[[1]]$x[(0:2500)*200+1], alldat[[1]]$y[(0:2500)*200+1]),color = "grey") +
   coord_cartesian(xlim = c(-100, 100), ylim= c(-100, 100))
 
 
 A = data.frame(alldat[[1]])
-
-
-
-tail(A)
-
 for (i in 2:100) {
   A = rbind(A, alldat[[i]])
 }
@@ -90,8 +96,7 @@ length(A$ID)
 ggplot()+
   geom_path(aes(A$x[(0:100000)*500+1], A$y[(0:100000)*500+1]), colour = A$ID[(0:100000)*500+1]) +
   coord_cartesian(xlim = c(-100, 100), ylim= c(-100, 100))
-
-
+}
 
 
 
@@ -101,9 +106,8 @@ ggplot()+
 ##############################
 ## Simulate occurrence data ##
 ##############################
-
-lambda = 0.01*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
-
+kappa = 2
+lambda = kappa*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
 
 
 #intensity of study area
@@ -154,7 +158,7 @@ for (i in 1:n) {
 Y = matrix(Y, ncol = 2)
 
 
-
+N
 
 #plotting simulations
 ggplot() +
@@ -163,9 +167,68 @@ ggplot() +
 
 
 
+############### testing what intensity to use ##################
+
+lik <- function(par){
+  l = 0
+  #adding likelihood from occurrence data
+  
+  #covariate field used to calculate intensity
+  cov_field = par[4]*exp(par[1]*covlist[[1]]$z + par[2]*covlist[[2]]$z + par[3]*covlist[[3]]$z)
+  
+  #finding intensity of study area
+  lambda_sum = 0
+  for (i in -lim[2]:(lim[2]-1)) {
+    for (j in -lim[2]:(lim[2]-1)) {
+      x1 = i
+      x2 = i+1
+      y1 = j
+      y2 = j+1
+      
+      f11 = (cov_field[x1+lim[2]+1, y1+lim[2]+1])
+      f12 = (cov_field[x1+lim[2]+1, y2+lim[2]+1])
+      f21 = (cov_field[x2+lim[2]+1, y1+lim[2]+1])
+      f22 = (cov_field[x2+lim[2]+1, y2+lim[2]+1])
+      
+      
+      lambda_sum = lambda_sum + ((y2+y1)*((x2+x1)*f11 + (x2-3*x1)*f21) + (y2-3*y1)*((x2+x1)*f12 + (x2-3*x1)*f22))/4
+    }
+  }
+  l = l - lambda_sum
+  
+  #intensity of locations
+  for (i in 1:nrow(Y)) {
+    x = Y[i, 1]
+    y = Y[i, 2]
+    
+    
+    x1 = floor(Y[i, 1])
+    x2 = ceiling(Y[i, 1])
+    y1 = floor(Y[i, 2])
+    y2 = ceiling(Y[i, 2])
+    
+    f11 = cov_field[x1+lim[2]+1, y1+lim[2]+1]
+    f12 = cov_field[x1+lim[2]+1, y2+lim[2]+1]
+    f21 = cov_field[x2+lim[2]+1, y1+lim[2]+1]
+    f22 = cov_field[x2+lim[2]+1, y2+lim[2]+1]
+    
+    #intensity at location
+    lambda_s = ((y2-y)/(y2-y1))*(f11*(x2-x)/(x2-x1) + f21*(x-x1)/(x2-x1)) + ((y-y1)/(y2-y1))*(f12*(x2-x)/(x2-x1) + f22*(x-x1)/(x2-x1))
+    
+    l = l + log(lambda_s)
+  }
+  return(min(-l, 1e8))
+}
 
 
-
+t1 = Sys.time()
+cl <- makeCluster(10)     # set the number of processor cores
+clusterExport(cl, varlist = c("covlist", "lik", "lim", "Y", "getUD"))
+setDefaultCluster(cl=cl) # set 'cl' as default cluster
+o2 = optimParallel(par=c(0,0,0,1), fn=lik, lower=c(-Inf, -Inf, -Inf, .0001))
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
+o2
 
 #####################
 ## MCMC estimation ##
@@ -266,6 +329,12 @@ lik <- function(X, Y, B_1, B_2, B_3, gammasq, kappa, ntrack, Delta){
   
   return(l)
 }
+
+
+
+
+
+
 
 
 #starting values

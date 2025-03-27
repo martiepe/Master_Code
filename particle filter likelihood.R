@@ -1,11 +1,14 @@
-# Load packages
 library(Rhabit)
 library(raster)
 library(ggplot2)
 library(viridis)
-library(parallel)
 library(reshape2)
 library(gridExtra)
+library(mvtnorm)
+library(foreach)
+library(iterators)
+library(parallel)
+library(doParallel)
 library(mvtnorm)
 set.seed(123)
 
@@ -119,77 +122,56 @@ UD_value <- function(s, UD){
 ##############
 
 
-
-#likelihood using extended kalman filter
-#assuming R = 0
-
-grad = bilinearGradArray(X, covlist)
-
 lik <- function(par){
   #log-likelihood
   l = 0
-  
-  U = Delta*par[4]*(grad[,,1]*par[1] + grad[,,2]*par[2] + grad[,,3]*par[3])/2
-  UD = getUD(covariates=covlist, beta=par[1:3])$z
-  
+
   for (j in 1:1) {
     for (i in 2:(nrow(X)-1)) {
       #control vector
-      u1 = U[i, ]
-      u2 = U[i+1, ]
-
-      a = min(1, UD_value(X[i+1, ], UD)*dmvnorm(X[i, ], mean = (X[i+1, ] + u2), sigma = diag(par[4]*Delta, 2, 2))/
-                (UD_value(X[i, ], UD)*dmvnorm(X[i+1, ], mean = (X[i, ] + u1), sigma = diag(par[4]*Delta, 2, 2))))
-      
-      l = l + log(a) + dmvnorm(X[i, ], mean = (X[i+1, ] + u2), sigma = diag(par[4]*Delta, 2, 2), log = T)
-      #if(i < 2){
-      #  print(dmvnorm(X[i+1, ], mean = (X[i, ] + u1), sigma = diag(par[4]*Delta, 2, 2)))
-      #  print((UD_value(X[i, ], UD)))
-      #}
-      
+      z = X[i, ]
+      for (k in 1:N) {
+        grad = bilinearGrad(z, covlist)
+        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/2
+        z_p = z + u*delta*par[4]/2 + rmvnorm(1, mean = c(0,0), sigma = diag(delta*par[4], 2, 2))
+        l = l + dmvnorm(z , mean = z_p, sigma = diag(delta*par[4], 2, 2))
+        z = z_p
+      }
+      grad = bilinearGrad(z, covlist)
+      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/2
+      l = l + dmvnorm(X[i, ] , mean = z + u*delta*par[4]/2, sigma = diag(delta*par[4], 2, 2))
     }
   }
+  
+  
   return(-l)
   
 }
-  
-
-Delta = dt*thin
 
 
+
+N = 5
+delta = dt*thin/(N+1)
 
 t1 = Sys.time()
-lik(c(0,0,1,1), delta, X, grad)
+optim(c(0,0,0,1), lik, method = "Nelder-Mead", lower = c(-Inf, -Inf, -Inf, 0))
 Sys.time() - t1
 
 
+l = c()
+
+
 t1 = Sys.time()
-optim(c(1,1,1,1), lik)
+while (length(l) < 1000) {
+  l = c(l, lik(c(4,2,-0.1, 5)))
+}
 Sys.time() - t1
 
-library(optimParallel)
-t1 = Sys.time()
-cl <- makeCluster(5)     # set the number of processor cores
-clusterExport(cl, varlist = c("lik", "grad", "dmvnorm", "X", "UD_value", "getUD", "Delta", "covlist", "lim"))
-setDefaultCluster(cl=cl) # set 'cl' as default cluster
-o2 = optimParallel(par=c(0,0,0,1), fn=lik, delta = delta, X = X, grad = grad, lower=c(-Inf, -Inf, -Inf, .0001))
-setDefaultCluster(cl=NULL); stopCluster(cl)
-Sys.time() - t1
-o2
 
+var(l)
+mean(l)
 
-beta
-lik(c(beta, 5))
-lik(c(0.003425801,  0.001479025, -0.034209244,  5.008598236))
-
-
-
-
-
-
-
-
-
+max(l)-min(l)
 
 
 
