@@ -106,7 +106,7 @@ ggplot()+
 ##############################
 ## Simulate occurrence data ##
 ##############################
-kappa = 2
+kappa = 0.02
 lambda = kappa*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
 
 
@@ -169,12 +169,12 @@ ggplot() +
 
 ############### testing what intensity to use ##################
 
-lik <- function(par){
+lik <- function(Y, B_1, B_2, B_3, kappa){
   l = 0
   #adding likelihood from occurrence data
   
   #covariate field used to calculate intensity
-  cov_field = par[4]*exp(par[1]*covlist[[1]]$z + par[2]*covlist[[2]]$z + par[3]*covlist[[3]]$z)
+  cov_field = kappa*exp(B_1*covlist[[1]]$z + B_2*covlist[[2]]$z + B_3*covlist[[3]]$z)
   
   #finding intensity of study area
   lambda_sum = 0
@@ -229,6 +229,140 @@ o2 = optimParallel(par=c(0,0,0,1), fn=lik, lower=c(-Inf, -Inf, -Inf, .0001))
 setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 o2
+
+lik(Y, 1, B_2, B_3, kappa)
+
+#starting values
+B_1 = 0
+B_2 = 0
+B_3 = 0
+kappa = 1
+#matrix containing sampled parameters
+params = matrix(c(B_1, B_2, B_3, kappa),ncol = 4)
+
+#number of samples
+n = 0
+#number of proposed values
+r = 0
+#random walk variance
+s = 0.0001
+
+Sigma = diag(s, 4,4)
+
+while (n < 100000) {
+  
+  #log of denominator of acceptance rate
+  ld = lik(Y, B_1, B_2, B_3, kappa) + 
+    pnorm(B_1, mean = 0, sd = 10^10,log.p = T) + 
+    pnorm(B_2, mean = 0, sd = 10^10,log.p = T) + 
+    pnorm(B_3, mean = 0, sd = 10^10,log.p = T) + 
+    pnorm(log(kappa), mean = 0, sd = 10^10,log.p = T) 
+  
+  #value signifying if proposed value has been accepted
+  d = F
+  while(d == F){
+    prop = rmvnorm(1, mean = c(B_1, B_2, B_3, log(kappa)), sigma = Sigma)
+    
+    B_1_p = prop[1]
+    B_2_p = prop[2]
+    B_3_p = prop[3]
+    kappa_p = exp(prop[4])
+    r = r+1
+    
+    #compute log of acceptance rate
+    a = lik(Y, B_1_p, B_2_p, B_3_p, kappa) +
+      pnorm(B_1_p, mean = 0, sd = 10^10,log.p = T) + 
+      pnorm(B_2_p, mean = 0, sd = 10^10,log.p = T) + 
+      pnorm(B_3_p, mean = 0, sd = 10^10,log.p = T) + 
+      pnorm(log(kappa_p), mean = 0, sd = 10^10,log.p = T) -
+      ld
+    #acceptance probability
+    A = min(exp(a), 1)
+    #print(A)
+    #if the proposal is accepted
+    if(runif(1) < A){
+      params = rbind(params, c(B_1_p, B_2_p, B_3_p, kappa_p))
+      B_1 = B_1_p
+      B_2 = B_2_p
+      B_3 = B_3_p
+      kappa = kappa_p
+      #proposed value has been accepted
+      d = T
+      #sample has increased
+      n = n + 1
+      
+      print(n)
+    }
+  }
+}
+
+
+
+
+
+pars = data.frame(B_1 = params[, 1], B_2 = params[,2], B_3 = params[,3], kappa = params[,4])
+
+
+p1 = 0
+p2 = 0
+p3 = 0
+p4 = 0
+
+
+#plotting parameter samples
+p1 <- ggplot() +
+  geom_line(aes(1:dim(params)[1], params[,1])) +
+  labs(x = "n", y = "Beta_1", title = "Samples of Beta_1") +
+  theme_bw()
+p2 <- ggplot() +
+  geom_line(aes(1:dim(params)[1], params[,2])) +
+  labs(x = "n", y = "Beta_2", title = "Samples of Beta_2") +
+  theme_bw()
+p3 <- ggplot() +
+  geom_line(aes(1:dim(params)[1], params[,3])) +
+  labs(x = "n", y = "Beta_3", title = "Samples of Beta_3") +
+  theme_bw()
+p4 <- ggplot() +
+  geom_line(aes(1:dim(params)[1], params[,4])) +
+  labs(x = "n", y = "kappa", title = "Samples of kappa") +
+  theme_bw()
+
+grid.arrange(p1,p2,p3,p4)
+
+
+
+#making histograms of samples
+p1 <- ggplot() +
+  geom_histogram(aes(params[200:10000,1]), color = "black", fill = "grey") +
+  labs(x = "Beta_1", y = "count", title = "historgram of Beta_1 samples") +
+  geom_vline(xintercept = 4, linetype="dotted", color = "red") +
+  theme_bw()
+p2 <- ggplot() +
+  geom_histogram(aes(params[200:10000,2]), color = "black", fill = "grey") +
+  labs(x = "Beta_2", y = "count", title = "historgram of Beta_2 samples") +
+  geom_vline(xintercept = 2, linetype="dotted", color = "red") +
+  theme_bw()
+p3 <- ggplot() +
+  geom_histogram(aes(params[200:10000,3]), color = "black", fill = "grey") +
+  labs(x = "Beta_3", y = "count", title = "historgram of Beta_3 samples") +
+  geom_vline(xintercept = -0.1, linetype="dotted", color = "red") +
+  theme_bw()
+p4 <- ggplot() +
+  geom_histogram(aes(params[200:10000,4]), color = "black", fill = "grey") +
+  labs(x = "gammasq", y = "count", title = "historgram of kappa samples") +
+  geom_vline(xintercept = 5, linetype="dotted", color = "red") +
+  theme_bw()
+
+grid.arrange(p1,p2,p3,p4)
+
+
+
+
+
+
+
+
+
 
 #####################
 ## MCMC estimation ##
