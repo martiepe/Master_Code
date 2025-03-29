@@ -135,7 +135,7 @@ lik <- function(par){
       
       mu_x = c()
       mu_y = c()
-      #sigma is the same as longas delta is the same, so it can be computed once
+      #sigma is the same as long as delta is the same, so it can be computed once
       for (k in 1:N) {
         for (m in 1:k) {
           sigma[k,m] = delta*(1 - k/(N+1))*(m/(N+1))
@@ -145,11 +145,11 @@ lik <- function(par){
         mu_y = c(mu_y, X[i, 2] + k*(X[i+1, 2] - X[i, 2])/(N+1))
       }
 
-      x = rmvnorm(1, mean = mu_x, sigma = sigma)
-      y = rmvnorm(1, mean = mu_y, sigma = sigma)
+      x = rmvnorm(1, mean = mu_x, sigma = par[4]*sigma)
+      y = rmvnorm(1, mean = mu_y, sigma = par[4]*sigma)
       
-      l = l - dmvnorm(x, mean = mu_x, sigma = sigma, log = TRUE)/M
-      l = l - dmvnorm(y, mean = mu_y, sigma = sigma, log = TRUE)/M
+      l = l - dmvnorm(x, mean = mu_x, sigma = par[4]*sigma, log = TRUE)/M
+      l = l - dmvnorm(y, mean = mu_y, sigma = par[4]*sigma, log = TRUE)/M
 
       
       grad = bilinearGrad(X[i, ], covlist)
@@ -202,7 +202,7 @@ lik(c(4,2,-0.1,5))
 ## testing lik for a grid of values ##
 ######################################
 
-
+M = 40
 
 # Your function
 lik1 <- function(beta) {
@@ -213,7 +213,7 @@ lik1 <- function(beta) {
 beta_grid <- seq(1,7,0.1)
 
 # Set up a cluster (leave 1 core free if you want)
-cl <- makeCluster(10)
+cl <- makeCluster(detectCores()-1)
 
 # Export function and needed variables to workers
 clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
