@@ -166,6 +166,7 @@ lik <- function(par){
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
       l = l + dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
       
+      print(l)
     }
     
   }
@@ -173,8 +174,15 @@ lik <- function(par){
   return(-l)
   
 }
+
+
+##########################
+## Parameter Estimation ##
+##########################
+
+
 #number of simulations
-M = 5
+M = 40
 #number of nodes
 N = 4
 
@@ -188,8 +196,42 @@ Sys.time() - t1
 o
 
 
+lik(c(4,2,-0.1,5))
+
+######################################
+## testing lik for a grid of values ##
+######################################
 
 
+
+# Your function
+lik1 <- function(beta) {
+  lik(c(beta, 2, -0.5, 5))
+}
+
+# Grid of values
+beta_grid <- seq(1,7,0.1)
+
+# Set up a cluster (leave 1 core free if you want)
+cl <- makeCluster(10)
+
+# Export function and needed variables to workers
+clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
+
+# Run in parallel
+results <- parLapply(cl, beta_grid, lik1)
+
+# Shut down the cluster
+stopCluster(cl)
+
+# Convert list to vector
+results <- unlist(results)
+
+print(results)
+
+
+ggplot() +
+  geom_line(aes(beta_grid, results))
 
 
 
