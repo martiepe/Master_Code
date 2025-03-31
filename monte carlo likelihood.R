@@ -128,10 +128,12 @@ lik <- function(par){
   l = 0
   
   #number of simulations
-  for (j in 1:M) {
-    #for each observation in the track
-    for (i in 2:(nrow(X)-1)) {
-      
+  
+  #for each observation in the track
+  for (i in 2:(nrow(X)-1)) {
+    L = 0
+    for (j in 1:M) {
+      L_k = 1
       #generating nodes
       sigma = matrix(nrow = N, ncol = N)
       
@@ -150,25 +152,29 @@ lik <- function(par){
       x = rmvnorm(1, mean = mu_x, sigma = par[4]*sigma)
       y = rmvnorm(1, mean = mu_y, sigma = par[4]*sigma)
       
-      l = l - dmvnorm(x, mean = mu_x, sigma = par[4]*sigma, log = TRUE)/M
-      l = l - dmvnorm(y, mean = mu_y, sigma = par[4]*sigma, log = TRUE)/M
+      L_k = L_k/dmvnorm(x, mean = mu_x, sigma = par[4]*sigma)
+      L_k = L_k/dmvnorm(y, mean = mu_y, sigma = par[4]*sigma)
 
       
       grad = bilinearGrad(X[i, ], covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
-      l = l + dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
+      L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
       
       for (k in 1:(N-1)) {
         grad = bilinearGrad(c(x[k], y[k]), covlist)
         u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
-        l = l + dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
+        L_k = L_k*dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       }
       grad = bilinearGrad(c(x[N], y[N]), covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
-      l = l + dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
+      
+      L = L + L_k/M
     }
+    
+    l = l + log(L)
     
   }
   
@@ -183,11 +189,11 @@ lik <- function(par){
   l = 0
   
   #number of simulations
-  for (j in 1:M) {
+  for (i in 2:(nrow(X)-1)) {
     #for each observation in the track
-    for (i in 2:(nrow(X)-1)) {
-      
-      
+    L = 0
+      for (j in 1:M) {
+      L_k = 1
       x = X[i, ]
       
       for (k in 1:N) {
@@ -196,16 +202,20 @@ lik <- function(par){
         
         x_p = rmvnorm(1, mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2))
         
-        l = l + dmvnorm(x_p ,  mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2), log = TRUE)/M
+        L_k = L_k*dmvnorm(x_p ,  mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2))
         
         x = x_p
       }
       grad = bilinearGrad(x, covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
       
-      l = l + dmvnorm(X[i+1, ] , mean = x + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = x + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
-    }
+      L = L + L_k/M
+      
+      }
+    
+    l = l + log(L)
     
   }
   
@@ -250,7 +260,7 @@ lik1 <- function(beta) {
 beta_grid <- seq(1,7,0.1)
 
 # Set up a cluster (leave 1 core free if you want)
-cl <- makeCluster(detectCores()-1)
+cl <- makeCluster(12)
 
 # Export function and needed variables to workers
 clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
