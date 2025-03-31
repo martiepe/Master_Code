@@ -164,11 +164,11 @@ lik <- function(par){
       for (k in 1:(N-1)) {
         grad = bilinearGrad(c(x[k], y[k]), covlist)
         u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
-        L_k = L_kdmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+        L_k = L_k*dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       }
       grad = bilinearGrad(c(x[N], y[N]), covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
-      L_k = L_kdmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
       
       L = L + L_k/M
@@ -260,7 +260,7 @@ lik1 <- function(beta) {
 beta_grid <- seq(1,7,0.1)
 
 # Set up a cluster (leave 1 core free if you want)
-cl <- makeCluster(detectCores()-1)
+cl <- makeCluster(12)
 
 # Export function and needed variables to workers
 clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
