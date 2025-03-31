@@ -120,6 +120,8 @@ UD_value <- function(s, UD){
 ##############
 # Likelihood #
 ##############
+
+#using brownian bridge
 delta = dt*thin
 lik <- function(par){
   #log-likelihood
@@ -166,7 +168,6 @@ lik <- function(par){
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
       l = l + dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
       
-      print(l)
     }
     
   }
@@ -175,6 +176,42 @@ lik <- function(par){
   
 }
 
+#without importance sampling
+
+lik <- function(par){
+  #log-likelihood
+  l = 0
+  
+  #number of simulations
+  for (j in 1:M) {
+    #for each observation in the track
+    for (i in 2:(nrow(X)-1)) {
+      
+      
+      x = X[i, ]
+      
+      for (k in 1:N) {
+        grad = bilinearGrad(x, covlist)
+        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+        
+        x_p = rmvnorm(1, mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2))
+        
+        l = l + dmvnorm(x_p ,  mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2), log = TRUE)/M
+        
+        x = x_p
+      }
+      grad = bilinearGrad(x, covlist)
+      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+      
+      l = l + dmvnorm(X[i+1, ] , mean = x + u, sigma = diag(delta*par[4]/(N+1), 2, 2), log = TRUE)/M
+      
+    }
+    
+  }
+  
+  return(-l)
+}
+lik(c(4,2,-0.1,5))
 
 ##########################
 ## Parameter Estimation ##
@@ -231,7 +268,9 @@ print(results)
 
 
 ggplot() +
-  geom_line(aes(beta_grid, results))
+  geom_line(aes(beta_grid, results)) +
+  labs(x="beta", y = "-l", title = "brownian bridge likelihood") +
+  theme_bw()
 
 
 
