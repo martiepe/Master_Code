@@ -259,16 +259,16 @@ lik1 <- function(beta) {
 # Grid of values
 beta_grid <- seq(1,7,0.1)
 
-# Set up a cluster (leave 1 core free if you want)
+# Set up a cluster
 cl <- makeCluster(12)
 
-# Export function and needed variables to workers
+# Export functions and variables
 clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
 
 # Run in parallel
 results <- parLapply(cl, beta_grid, lik1)
 
-# Shut down the cluster
+# Shut down cluster
 stopCluster(cl)
 
 # Convert list to vector
