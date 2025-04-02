@@ -221,7 +221,11 @@ lik <- function(par){
   
   return(-l)
 }
-lik(c(4,2,-0.1,5))
+
+
+
+#using modified Brownian bridge
+
 
 ##########################
 ## Parameter Estimation ##
@@ -250,7 +254,7 @@ lik(c(4,2,-0.1,5))
 ######################################
 
 M = 40
-
+N = 4
 # Your function
 lik1 <- function(beta) {
   lik(c(beta, 2, -0.5, 5))
@@ -260,7 +264,7 @@ lik1 <- function(beta) {
 beta_grid <- seq(1,7,0.1)
 
 # Set up a cluster
-cl <- makeCluster(12)
+cl <- makeCluster(detectCores()-1)
 
 # Export functions and variables
 clusterExport(cl, varlist = c("lik1", "N", "M", "rmvnorm", "dmvnorm", "bilinearGrad", "delta", "lik", "X", "covlist"))
