@@ -182,7 +182,7 @@ hessian(c(0,0), c(0,0,0))
 # Likelihood #
 ##############
 
-m = 5
+m = 20
 delta = dt*thin/(m+1)
 
 #likelihood using extended kalman filter
@@ -200,7 +200,7 @@ lik <- function(gammasq){
     P = as.matrix(bdiag(list(10*Q, diag(10^6, 3, 3))))
     
     #initial state
-    z = c(X[1, ], 1, 1, 1)
+    z = c(X[1, ], 0, 0, 0)
     z_p = z
     
     
@@ -211,18 +211,16 @@ lik <- function(gammasq){
       F_k = cbind(rbind(diag(1,2,2) + (delta*gammasq/2)*hessian(z[1:2], z[3:5]), matrix(rep(0, 6), nrow = 3, ncol = 2)),
                   rbind(u, diag(1,3,3)))
       #predicted state estimate
-      z_p[1:2] = z[1:2] + B %*% u %*% z[3:5]
+      z_p = c(z[1:2] + B %*% u %*% z[3:5], z[3:5])
       
       #predicted estimate covariance 
       P = F_k %*% P %*% t(F_k) + as.matrix(bdiag(list(Q, diag(0, 3, 3))))
       
       #updated state estimate
       z =  c(X[i, ], z_p[3:5] + as.vector(P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% (X[i, ] - z_p[1:2])))
-      
-      print(z[3:5])
-      print(P)
+      #print(z)
       #updated estimate covariance
-      P = as.matrix(bdiag(list(diag(0,2,2), P[1:3, 1:3] - P[1:3, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 1:3])))
+      P = as.matrix(bdiag(list(diag(0,2,2), P[3:5, 3:5] - P[3:5, 1:2] %*% solve(P[1:2, 1:2]) %*% P[1:2, 3:5])))
       
       #adding likelihood contribution of i-th state
       l = l + dmvnorm(c(X[i, ] - z_p[1:2]), mean = c(0,0), sigma = as.matrix(P[1:2, 1:2]) , log = T)
@@ -257,7 +255,11 @@ lik <- function(gammasq){
   
 }
 
+t1 = Sys.time()
 lik(1)
+Sys.time() - t1
+
+
 
 ##############
 # Estimation #

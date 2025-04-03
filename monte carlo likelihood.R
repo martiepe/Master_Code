@@ -22,7 +22,7 @@ ncov <- 2
 covlist <- list()
 #simulate spatial covariates wuing grf with matern covariance function
 for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 0.6, rho = 50, sigma2 = 0.1, 
+  covlist[[i]] <- simSpatialCov(lim = lim, nu = 2, rho = 50, sigma2 = 0.1, 
                                 resol = resol, raster_like = TRUE)
 }
 
@@ -88,40 +88,11 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
 
-UD_value <- function(s, UD){
-  x = s[1]
-  y = s[2]
-  
-  
-  x1 = floor(s[1])
-  x2 = ceiling(s[1])
-  y1 = floor(s[2])
-  y2 = ceiling(s[2])
-  
-  if(x1 == x2 && y1 == y2){
-    UD[x1, y1]
-  }
-  
-  
-  f11 = UD[x1+lim[2]+1, y1+lim[2]+1]
-  f12 = UD[x1+lim[2]+1, y2+lim[2]+1]
-  f21 = UD[x2+lim[2]+1, y1+lim[2]+1]
-  f22 = UD[x2+lim[2]+1, y2+lim[2]+1]
-  
-  #value of UD at location
-  ((y2-y)/(y2-y1))*(f11*(x2-x)/(x2-x1) + f21*(x-x1)/(x2-x1)) + ((y-y1)/(y2-y1))*(f12*(x2-x)/(x2-x1) + f22*(x-x1)/(x2-x1))
-  
-}
-
-
-
-
-
 ##############
 # Likelihood #
 ##############
 
-#using brownian bridge
+#importance sampling using brownian bridge
 delta = dt*thin
 lik <- function(par){
   #log-likelihood
@@ -132,6 +103,7 @@ lik <- function(par){
   #for each observation in the track
   for (i in 2:(nrow(X)-1)) {
     L = 0
+    #generating M brownian bridges
     for (j in 1:M) {
       L_k = 1
       #generating nodes
@@ -156,6 +128,7 @@ lik <- function(par){
       L_k = L_k/dmvnorm(y, mean = mu_y, sigma = par[4]*sigma)
 
       
+      #
       grad = bilinearGrad(X[i, ], covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
       L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
@@ -182,8 +155,92 @@ lik <- function(par){
   
 }
 
-#without importance sampling
+#parralellized importance sampling using brownian bridge
+delta = dt*thin
+lik <- function(par, cl) {
+  # Compute the list of i indices to parallelize
+  i_list <- 2:(nrow(X)-1)
+  
+  # Function to compute log-likelihood contribution for a single i
+  compute_L_i <- function(i) {
+    L = 0
+    sigma = matrix(nrow = N, ncol = N)
+    for (k in 1:N) {
+      for (m in 1:k) {
+        sigma[k,m] = delta * (1 - k/(N+1)) * (m/(N+1))
+        sigma[m,k] = sigma[k,m]
+      }
+    }
+    
+    for (j in 1:M) {
+      mu_x = mu_y = numeric(N)
+      for (k in 1:N) {
+        mu_x[k] = X[i, 1] + k * (X[i+1, 1] - X[i, 1]) / (N+1)
+        mu_y[k] = X[i, 2] + k * (X[i+1, 2] - X[i, 2]) / (N+1)
+      }
+      
+      x = rmvnorm(1, mean = mu_x, sigma = par[4] * sigma)
+      y = rmvnorm(1, mean = mu_y, sigma = par[4] * sigma)
+      
+      L_k = 1
+      L_k = L_k / dmvnorm(x, mean = mu_x, sigma = par[4] * sigma)
+      L_k = L_k / dmvnorm(y, mean = mu_y, sigma = par[4] * sigma)
+      
+      grad = bilinearGrad(X[i, ], covlist)
+      u = delta * par[4] * (grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3]) / (2 * (N+1))
+      L_k = L_k * dmvnorm(X[i, ], mean = c(x[1], y[1]) + u, sigma = diag(delta * par[4] / (N+1), 2, 2))
+      
+      for (k in 1:(N-1)) {
+        grad = bilinearGrad(c(x[k], y[k]), covlist)
+        u = delta * par[4] * (grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3]) / (2 * (N+1))
+        L_k = L_k * dmvnorm(c(x[k+1], y[k+1]), mean = c(x[k], y[k]) + u, sigma = diag(delta * par[4] / (N+1), 2, 2))
+      }
+      
+      grad = bilinearGrad(c(x[N], y[N]), covlist)
+      u = delta * par[4] * (grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3]) / (2 * (N+1))
+      L_k = L_k * dmvnorm(X[i+1, ], mean = c(x[N], y[N]) + u, sigma = diag(delta * par[4] / (N+1), 2, 2))
+      
+      L = L + L_k / M
+    }
+    
+    return(log(L))
+  }
+  
+  # Run in parallel
+  results <- parLapply(cl, i_list, compute_L_i)
+  total_log_likelihood <- sum(unlist(results))
+  
+  return(-total_log_likelihood)
+}
 
+
+M = 40
+N = 4
+
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
+
+results = c()
+results = c(results, lik(par = c(4, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(2, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(6, 2, -0.1, 5), cl = cl))
+# Cleanup
+stopCluster(cl)
+
+
+ggplot()+
+  geom_line(aes(c(2,4,6), results))
+
+
+
+
+
+
+
+
+
+#without importance sampling
+delta = dt*thin
 lik <- function(par){
   #log-likelihood
   l = 0
@@ -221,7 +278,7 @@ lik <- function(par){
   
   return(-l)
 }
-
+lik(c(4,2,-0.1,5))
 
 
 #using modified Brownian bridge
@@ -254,7 +311,11 @@ lik(c(4,2,-0.1,5))
 ######################################
 
 M = 40
+<<<<<<< HEAD
 N = 4
+=======
+N=4
+>>>>>>> 0ecf6646ff8a42f2fbbdb2c9cd784bd1bc9dc83c
 # Your function
 lik1 <- function(beta) {
   lik(c(beta, 2, -0.5, 5))
