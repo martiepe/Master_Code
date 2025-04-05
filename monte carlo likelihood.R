@@ -22,7 +22,7 @@ ncov <- 2
 covlist <- list()
 #simulate spatial covariates wuing grf with matern covariance function
 for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 2, rho = 50, sigma2 = 0.1, 
+  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1.5, rho = 50, sigma2 = 1, 
                                 resol = resol, raster_like = TRUE)
 }
 
@@ -30,8 +30,30 @@ for(i in 1:ncov) {
 xgrid <- seq(lim[1], lim[2], by=resol)
 ygrid <- seq(lim[3], lim[4], by=resol)
 xygrid <- expand.grid(xgrid,ygrid)
-dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/100
+dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
 covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+
+
+
+#perlin covariates
+library(ambient)
+covlist <- list()
+xgrid <- seq(lim[1], lim[2], by = resol)
+ygrid <- seq(lim[3], lim[4], by = resol)
+coords <- as.matrix(expand.grid(xgrid, ygrid))
+for(i in 1:ncov) {
+  vals = 2*noise_perlin(c(length(xgrid), length(ygrid)))
+  covlist[[i]] = list(x = xgrid, y = ygrid, z = matrix(vals, nrow = length(xgrid)))
+}
+# Include squared distance to centre of map as covariate
+xgrid <- seq(lim[1], lim[2], by=resol)
+ygrid <- seq(lim[3], lim[4], by=resol)
+xygrid <- expand.grid(xgrid,ygrid)
+dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
+covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+
+
+
 
 
 
@@ -39,6 +61,18 @@ covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygr
 beta <- c(4,2,-0.1)
 UD <- getUD(covariates=covlist, beta=beta)
 
+# Plot covariates
+ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
+                 legend.title = element_text(size=12), legend.text = element_text(size=12))
+c1plot <- plotRaster(rhabitToRaster(covlist[[1]]), scale.name = expression(c[1])) + ggtheme
+c2plot <- plotRaster(rhabitToRaster(covlist[[2]]), scale.name = expression(c[2])) + ggtheme
+c3plot <- plotRaster(rhabitToRaster(covlist[[3]]), scale.name = expression(c[2])) + ggtheme
+UD <- getUD(covariates=covlist, beta=beta)
+UDplot <- plotRaster(rhabitToRaster(UD), scale.name = expression(pi)) + ggtheme
+
+UDplot
+
+c2plot
 
 
 
@@ -88,9 +122,47 @@ X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
 
+############################################
+## checking if covariates and thin is ok ###
+############################################
+
+#estimate using thinned data
+thin = 10
+X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+N = nrow(X)
+X = X[(0:(N%/%thin -1))*thin +1, ]
+#X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+
+gradArray = bilinearGradArray(X, covlist)
+
+locs = X
+times = alldat[[1]]$t[(0:(N%/%thin -1))*thin +1]
+ID = alldat[[1]]$ID[(0:(N%/%thin -1))*thin +1]
+
+fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
+
+fit$betaHat
+fit$gamma2Hat
+
+
+
+
 ##############
 # Likelihood #
 ##############
+
+# Euler-Maruyama likelihood
+EM_lik <- function(par){
+  grad = bilinearGradArray(X, covlist) 
+  u = par[1]*grad[,,1] + par[2]*grad[,,2] + par[3]*grad[,,3]
+  N = nrow(X)
+  l = 0
+  for (i in 1:(N-1)) {
+    l = l + dmvnorm(X[i+1, ] - X[i, ] - par[4]*delta*u[i, ]/2, mean = c(0,0), sigma = diag(delta*par[4],2,2), log = TRUE)
+  }
+  return(-l)
+}
+
 
 #importance sampling using brownian bridge
 delta = dt*thin
@@ -213,23 +285,39 @@ lik <- function(par, cl) {
   return(-total_log_likelihood)
 }
 
-
-M = 40
-N = 4
+results = c()
+M = 60
+N = thin-1
 
 cl <- makeCluster(detectCores() - 1)
 clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
 
-results = c()
-results = c(results, lik(par = c(4, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(0, 2, -0.1, 5), cl = cl))
 results = c(results, lik(par = c(2, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(4, 2, -0.1, 5), cl = cl))
 results = c(results, lik(par = c(6, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(8, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(10, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(12, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(14, 2, -0.1, 5), cl = cl))
 # Cleanup
 stopCluster(cl)
 
+EM = c()
+EM = c(EM, EM_lik(par = c(0, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(2, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(4, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(6, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(8, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(10, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(12, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(14, 2, -0.1, 5)))
 
 ggplot()+
-  geom_line(aes(c(2,4,6), results))
+  geom_line(aes(c(0,2,4,6,8,10,12,14), results)) +
+  geom_line(aes(c(0,2,4,6,8,10,12,14), EM), color = "red")
+
+
 
 
 

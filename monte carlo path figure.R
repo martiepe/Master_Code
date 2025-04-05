@@ -41,19 +41,6 @@ beta <- c(4,2,-0.1)
 UD <- getUD(covariates=covlist, beta=beta)
 
 
-# Plot covariates
-ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
-                 legend.title = element_text(size=12), legend.text = element_text(size=12))
-c1plot <- plotRaster(rhabitToRaster(covlist[[1]]), scale.name = expression(c[1])) + ggtheme
-c2plot <- plotRaster(rhabitToRaster(covlist[[2]]), scale.name = expression(c[2])) + ggtheme
-UDplot <- plotRaster(rhabitToRaster(UD), scale.name = expression(pi)) + ggtheme
-
-
-
-c1plot
-c2plot
-UDplot
-
 
 ###################
 ## Simulate data ##
@@ -70,7 +57,7 @@ ntrack <- 1
 speed <- 5
 
 # Time grids
-times = seq(0, 0.1, 0.00001)
+times = seq(0, 0.1, dt)
 
 #simulation
 X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), cov_list = covlist)
@@ -90,10 +77,10 @@ for (i in 1:10) {
   tracks[(11*(i-1)+1):(i*11), 2] = c(x[,2], X[11, 2])
   tracks[(11*(i-1)+1):(i*11), 3] = i
 }
-ggplot() +
+p1 <- ggplot() +
   geom_path(aes(x=tracks[, 1], y = tracks[, 2], group = tracks[, 3])) +
   geom_path(aes(seq(0, 0.1, 0.01), X[,2]), color = "red") +
-  labs(x = "t", y = "x")
+  labs(x = "t", y = "x", title = "Langevin Process")
 
 
 
@@ -124,10 +111,15 @@ for (i in 1:10) {
   tracks[(11*(i-1)+1):(i*11), 3] = i
 }
 
-ggplot() +
+p2 <- ggplot() +
   geom_path(aes(x=tracks[, 1], y = tracks[, 2], group = tracks[, 3])) +
   geom_path(aes(seq(0, 0.1, 0.01), X[,2]), color = "red") +
-  labs(x = "t", y = "x")
+  labs(x = "t", y = "x", title = "Brownian Bridge")
+
+grid.arrange(p1, p2, nrow = 1)
+
+
+
 
 
 
