@@ -42,7 +42,7 @@ xgrid <- seq(lim[1], lim[2], by = resol)
 ygrid <- seq(lim[3], lim[4], by = resol)
 coords <- as.matrix(expand.grid(xgrid, ygrid))
 for(i in 1:ncov) {
-  vals = 2*noise_perlin(c(length(xgrid), length(ygrid)))
+  vals = 3*noise_perlin(c(length(xgrid), length(ygrid)), frequency = 0.05)
   covlist[[i]] = list(x = xgrid, y = ygrid, z = matrix(vals, nrow = length(xgrid)))
 }
 # Include squared distance to centre of map as covariate
@@ -284,48 +284,7 @@ lik <- function(par, cl) {
   
   return(-total_log_likelihood)
 }
-
-results = c()
-M = 60
-N = thin-1
-
-cl <- makeCluster(detectCores() - 1)
-clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
-
-results = c(results, lik(par = c(0, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(2, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(4, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(6, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(8, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(10, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(12, 2, -0.1, 5), cl = cl))
-results = c(results, lik(par = c(14, 2, -0.1, 5), cl = cl))
-# Cleanup
-stopCluster(cl)
-
-EM = c()
-EM = c(EM, EM_lik(par = c(0, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(2, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(4, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(6, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(8, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(10, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(12, 2, -0.1, 5)))
-EM = c(EM, EM_lik(par = c(14, 2, -0.1, 5)))
-
-ggplot()+
-  geom_line(aes(c(0,2,4,6,8,10,12,14), results)) +
-  geom_line(aes(c(0,2,4,6,8,10,12,14), EM), color = "red")
-
-
-
-
-
-
-
-
-
-
+ 
 
 #without importance sampling
 delta = dt*thin
@@ -366,10 +325,90 @@ lik <- function(par){
   
   return(-l)
 }
-lik(c(4,2,-0.1,5))
 
 
-#using modified Brownian bridge
+
+#parralellized importance sampling 
+delta = dt*thin
+lik <- function(par, cl) {
+  # Compute the list of i indices to parallelize
+  i_list <- 2:(nrow(X)-1)
+  
+  # Function to compute log-likelihood contribution for a single i
+  compute_L_i <- function(i) {
+    L = 0
+    for (j in 1:M) {
+      L_k = 1
+      x = X[i, ]
+      
+      for (k in 1:N) {
+        grad = bilinearGrad(x, covlist)
+        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+        
+        x_p = rmvnorm(1, mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2))
+        
+        L_k = L_k*dmvnorm(x_p ,  mean = x + u, sigma = diag(par[4]*delta/(N+1), 2, 2))
+        
+        x = x_p
+      }
+      grad = bilinearGrad(x, covlist)
+      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+      
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = x + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      
+      L = L + L_k/M
+      
+    }
+    return(log(L))
+  }
+  
+  # Run in parallel
+  results <- parLapply(cl, i_list, compute_L_i)
+  total_log_likelihood <- sum(unlist(results))
+  
+  return(-total_log_likelihood)
+}
+
+
+
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
+lik(c(4,2,-0.1,5), cl)
+stopCluster(cl)
+
+
+results = c()
+M = 60
+N = thin-1
+
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
+
+results = c(results, lik(par = c(0, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(2, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(4, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(6, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(8, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(10, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(12, 2, -0.1, 5), cl = cl))
+results = c(results, lik(par = c(14, 2, -0.1, 5), cl = cl))
+# Cleanup
+stopCluster(cl)
+
+EM = c()
+EM = c(EM, EM_lik(par = c(0, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(2, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(4, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(6, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(8, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(10, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(12, 2, -0.1, 5)))
+EM = c(EM, EM_lik(par = c(14, 2, -0.1, 5)))
+
+ggplot()+
+  geom_line(aes(c(0,2,4,6,8,10,12,14), results)) +
+  geom_line(aes(c(0,2,4,6,8,10,12,14), EM), color = "red")
+
 
 
 ##########################
@@ -378,33 +417,29 @@ lik(c(4,2,-0.1,5))
 
 
 #number of simulations
-M = 40
+M = 50
 #number of nodes
-N = 4
+N = thin-1
 
 t1 = Sys.time()
-lik(c(0,0,0,1))
-Sys.time() - t1
-
-t1 = Sys.time()
-o = optim(c(0,0,0,1), lik, method = "Nelder-Mead")
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
+o = optim(c(0,0,0,1), lik, cl = cl, method = "Nelder-Mead", control = list(maxit = 200))
+stopCluster(cl)
 Sys.time() - t1
 o
 
 
-lik(c(4,2,-0.1,5))
+
 
 ######################################
 ## testing lik for a grid of values ##
 ######################################
 
 M = 40
-<<<<<<< HEAD
 N = 4
-=======
-N=4
->>>>>>> 0ecf6646ff8a42f2fbbdb2c9cd784bd1bc9dc83c
-# Your function
+N=thin-1
+
 lik1 <- function(beta) {
   lik(c(beta, 2, -0.5, 5))
 }
