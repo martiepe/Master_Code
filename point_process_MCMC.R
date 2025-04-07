@@ -18,7 +18,7 @@ set.seed(1)
 ## Define covariates ##
 #######################
 # Generate two random covariates
-lim <- c(-1, 1, -1, 1)*150
+lim <- c(-1, 1, -1, 1)*100
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -39,12 +39,24 @@ beta <- c(4,2,-0.1)
 
 
 
+UD = getUD(covlist, beta)
+
+
+
+ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
+                 legend.title = element_text(size=12), legend.text = element_text(size=12))
+c1plot <- plotRaster(rhabitToRaster(covlist[[1]]), scale.name = expression(c[1])) + ggtheme
+c2plot <- plotRaster(rhabitToRaster(covlist[[2]]), scale.name = expression(c[2])) + ggtheme
+UDplot <- plotRaster(rhabitToRaster(UD), scale.name = expression(pi)) + ggtheme
+
+UDplot
+
 
 ##############################
 ## Simulate occurrence data ##
 ##############################
 
-lambda = 0.01*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
+lambda = 0.001*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
 
 
 
@@ -94,14 +106,14 @@ for (i in 1:n) {
 }
 
 Y = matrix(Y, ncol = 2)
-
+s = 0
 N
 n
 
 
 #plotting simulations
 ggplot() +
-  geom_point(aes(S[,1],S[,2]), colour = "grey80")+
+  geom_point(aes(Y[,1],Y[,2]), colour = "grey80")+
   coord_cartesian(xlim = c(-100, 100), ylim= c(-100, 100))
 
 
