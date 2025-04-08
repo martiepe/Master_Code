@@ -167,6 +167,22 @@ lik <- function(par){
     y1 = floor(Y[i, 2])
     y2 = ceiling(Y[i, 2])
     
+    
+    if (x == x2) {
+      print(x)
+    }
+    
+    if(x2 == x1){
+      x1 = x1-1
+      x2 = x2+1
+    }
+    if(y2 == y1){
+      y1 = y1-1
+      y2 = y2+1
+    }
+
+    
+    
     f11 = par[4]*cov_field[x1+lim[2]+1, y1+lim[2]+1]
     f12 = par[4]*cov_field[x1+lim[2]+1, y2+lim[2]+1]
     f21 = par[4]*cov_field[x2+lim[2]+1, y1+lim[2]+1]
@@ -174,17 +190,36 @@ lik <- function(par){
     
     #intensity at location
     lambda_s = ((y2-y)/(y2-y1))*(f11*(x2-x)/(x2-x1) + f21*(x-x1)/(x2-x1)) + ((y-y1)/(y2-y1))*(f12*(x2-x)/(x2-x1) + f22*(x-x1)/(x2-x1))
-    
+
     l = l + log(lambda_s)
   }
   
-  
+  if (is.nan(-l)) {
+    print(par)
+  }
   return(-l)
 }
 
 
+
+
+
+lik(c(4,2,-0.1,0.001))
 #par: B1, B2, B3, kappa
 par = c(0,0,0,1)
 #
-o = optim(par, lik, lower = c(-Inf, -Inf, -Inf, 0))
+o = optim(par, lik)
+o
+warnings()
+
+t1 = Sys.time()
+cl <- makeCluster(12)
+clusterExport(cl, c("Y", "covlist", ))
+o = optim(c(0,0,0,1), lik, cl = cl, method = "Nelder-Mead", control = list(maxit = 200))
+stopCluster(cl)
+Sys.time() - t1
+o
+
+
+
 

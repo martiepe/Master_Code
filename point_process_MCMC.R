@@ -9,7 +9,7 @@ library(parallel)
 library(reshape2)
 library(gridExtra)
 library(mvtnorm)
-set.seed(1)
+set.seed(NULL)
 
 
 
@@ -23,7 +23,7 @@ resol <- 1
 ncov <- 2
 covlist <- list()
 for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 0.6, rho = 50, sigma2 = 0.1, 
+  covlist[[i]] <- simSpatialCov(lim = lim, nu = 3, rho = 50, sigma2 = 0.1, 
                                 resol = resol, raster_like = TRUE)
 }
 
@@ -56,7 +56,7 @@ UDplot
 ## Simulate occurrence data ##
 ##############################
 
-lambda = 0.001*exp(beta[1]*covlist[[1]]$z + beta[2]*covlist[[2]]$z + beta[3]*covlist[[3]]$z)
+lambda = exp(par[1]*covlist[[1]]$z + par[2]*covlist[[2]]$z + par[3]*covlist[[3]]$z)
 
 
 
@@ -129,12 +129,12 @@ ggplot() +
 #####################
 
 #likelihood function
-lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
+lik <- function(par){
   #log-likelihood
   l = 0
-
+  kappa = nrow(Y)
   #covariate field used to calculate intensity
-  cov_field = exp(B_1*covlist[[1]]$z + B_2*covlist[[2]]$z + B_3*covlist[[3]]$z)
+  cov_field = par[4]*exp(par[1]*covlist[[1]]$z + par[2]*covlist[[2]]$z + par[3]*covlist[[3]]$z)
   
   #finding intensity of study area
   lambda_sum = 0
@@ -145,13 +145,13 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
       y1 = j
       y2 = j+1
       
-      f11 = kappa*(cov_field[x1+lim[2]+1, y1+lim[2]+1])
-      f12 = kappa*(cov_field[x1+lim[2]+1, y2+lim[2]+1])
-      f21 = kappa*(cov_field[x2+lim[2]+1, y1+lim[2]+1])
-      f22 = kappa*(cov_field[x2+lim[2]+1, y2+lim[2]+1])
+      f11 = (cov_field[x1+lim[2]+1, y1+lim[2]+1])
+      f12 = (cov_field[x1+lim[2]+1, y2+lim[2]+1])
+      f21 = (cov_field[x2+lim[2]+1, y1+lim[2]+1])
+      f22 = (cov_field[x2+lim[2]+1, y2+lim[2]+1])
       
       
-      lambda_sum = lambda_sum + ((y2+y1)*((x2+x1)*f11 + (x2-3*x1)*f21) + (y2-3*y1)*((x2+x1)*f12 + (x2-3*x1)*f22))/4
+      lambda_sum = lambda_sum + (f11 + f12 + f21 + f22) / 4
     }
   }
   l = l - lambda_sum
@@ -167,18 +167,33 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
     y1 = floor(Y[i, 2])
     y2 = ceiling(Y[i, 2])
     
-    f11 = kappa*cov_field[x1+lim[2]+1, y1+lim[2]+1]
-    f12 = kappa*cov_field[x1+lim[2]+1, y2+lim[2]+1]
-    f21 = kappa*cov_field[x2+lim[2]+1, y1+lim[2]+1]
-    f22 = kappa*cov_field[x2+lim[2]+1, y2+lim[2]+1]
+    
+    if (x == x2) {
+      print(x)
+    }
+    
+    if(x2 == x1){
+      x1 = x1-1
+      x2 = x2+1
+    }
+    if(y2 == y1){
+      y1 = y1-1
+      y2 = y2+1
+    }
+    
+    
+    
+    f11 = cov_field[x1+lim[2]+1, y1+lim[2]+1]
+    f12 = cov_field[x1+lim[2]+1, y2+lim[2]+1]
+    f21 = cov_field[x2+lim[2]+1, y1+lim[2]+1]
+    f22 = cov_field[x2+lim[2]+1, y2+lim[2]+1]
     
     #intensity at location
     lambda_s = ((y2-y)/(y2-y1))*(f11*(x2-x)/(x2-x1) + f21*(x-x1)/(x2-x1)) + ((y-y1)/(y2-y1))*(f12*(x2-x)/(x2-x1) + f22*(x-x1)/(x2-x1))
     
     l = l + log(lambda_s)
   }
-  
-  
+
   return(l)
 }
 
@@ -186,13 +201,10 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
 
 
 
-
-
-
 #starting values
-B_1 = 0
-B_2 = 0
-B_3 = 0
+B_1 = 4
+B_2 = 2
+B_3 = -0.1
 kappa = 1
 #matrix containing sampled parameters
 params = matrix(c(B_1, B_2, B_3, kappa),ncol = 4)
@@ -209,12 +221,11 @@ Sigma = diag(s, 4, 4)
 while (n < 100000) {
   
   #log of denominator of acceptance rate
-  ld = lik(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta) + 
+  ld = lik(c(B_1, B_2, B_3, kappa)) + 
     pnorm(B_1, mean = 0, sd = 10^10,log.p = T) + 
     pnorm(B_2, mean = 0, sd = 10^10,log.p = T) + 
-    pnorm(B_3, mean = 0, sd = 10^10,log.p = T) + 
+    pnorm(B_3, mean = 0, sd = 10^10,log.p = T) 
     pnorm(log(kappa), mean = 0, sd = 10^10,log.p = T) 
-
   #value signifying if proposed value has been accepted
   d = F
   while(d == F){
@@ -227,16 +238,14 @@ while (n < 100000) {
     r = r+1
     
     #compute log of acceptance rate
-    a = lik(X, Y, B_1_p, B_2_p, B_3_p, kappa, ntrack, Delta) +
+    a = lik(c(B_1_p, B_2_p, B_3_p, kappa_p)) +
       pnorm(B_1_p, mean = 0, sd = 10^10,log.p = T) + 
       pnorm(B_2_p, mean = 0, sd = 10^10,log.p = T) + 
-      pnorm(B_3_p, mean = 0, sd = 10^10,log.p = T) + 
+      pnorm(B_3_p, mean = 0, sd = 10^10,log.p = T) +
       pnorm(log(kappa_p), mean = 0, sd = 10^10,log.p = T) -
       ld
-    
     #acceptance probability
     A = min(exp(a), 1)
-    print(A)
     #if the proposal is accepted
     if(runif(1) < A){
       params = rbind(params, c(B_1_p, B_2_p, B_3_p, kappa_p))
@@ -255,11 +264,6 @@ while (n < 100000) {
 }
 
 
-
-
-
-
-pars = data.frame(B_1 = params[, 1], B_2 = params[,2], B_3 = params[,3], kappa = params[,4])
 
 save(pars, file = "MCMC_sample3.Rda")
 
@@ -287,7 +291,7 @@ p4 <- ggplot() +
   labs(x = "n", y = "kappa", title = "Samples of kappa") +
   theme_bw()
 
-grid.arrange(p1,p2,p3,p4)
+grid.arrange(p1,p2,p3, p4)
 
 
 
