@@ -175,32 +175,32 @@ lik <- function(par){
   #for each observation in the track
   for (i in 2:(nrow(X)-1)) {
     L = 0
-    #generating M brownian bridges
+    
+    #covaance and mean of brownian bridge
+    sigma = matrix(nrow = N, ncol = N)
+      
+    mu_x = c()
+    mu_y = c()
+    for (k in 1:N) {
+      for (m in 1:k) {
+        sigma[k,m] = delta*(1 - k/(N+1))*(m/(N+1))
+        sigma[m,k] = delta*(1 - k/(N+1))*(m/(N+1))
+      }
+      mu_x = c(mu_x, X[i, 1] + k*(X[i+1, 1] - X[i, 1])/(N+1))
+      mu_y = c(mu_y, X[i, 2] + k*(X[i+1, 2] - X[i, 2])/(N+1))
+    }
+    
     for (j in 1:M) {
       L_k = 1
-      #generating nodes
-      sigma = matrix(nrow = N, ncol = N)
-      
-      mu_x = c()
-      mu_y = c()
-      #sigma is the same as long as delta is the same, so it can be computed once
-      for (k in 1:N) {
-        for (m in 1:k) {
-          sigma[k,m] = delta*(1 - k/(N+1))*(m/(N+1))
-          sigma[m,k] = delta*(1 - k/(N+1))*(m/(N+1))
-        }
-        mu_x = c(mu_x, X[i, 1] + k*(X[i+1, 1] - X[i, 1])/(N+1))
-        mu_y = c(mu_y, X[i, 2] + k*(X[i+1, 2] - X[i, 2])/(N+1))
-      }
-
+      #simulatig brownian bridge
       x = rmvnorm(1, mean = mu_x, sigma = par[4]*sigma)
       y = rmvnorm(1, mean = mu_y, sigma = par[4]*sigma)
-      
+      #
       L_k = L_k/dmvnorm(x, mean = mu_x, sigma = par[4]*sigma)
       L_k = L_k/dmvnorm(y, mean = mu_y, sigma = par[4]*sigma)
 
       
-      #
+      #adding Langevin process transition probability of proposed brownian bridge
       grad = bilinearGrad(X[i, ], covlist)
       u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
       L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
@@ -230,34 +230,37 @@ lik <- function(par){
 #parralellized importance sampling using brownian bridge
 delta = dt*thin
 lik <- function(par, cl) {
-  # Compute the list of i indices to parallelize
-  i_list <- 2:(nrow(X)-1)
   
-  # Function to compute log-likelihood contribution for a single i
+  
+  #compute likelihood of one observation
   compute_L_i <- function(i) {
     L = 0
+    
+    #making mean and covariance for brownian bridge
     sigma = matrix(nrow = N, ncol = N)
+    mu_x = c()
+    mu_y = c()
     for (k in 1:N) {
       for (m in 1:k) {
         sigma[k,m] = delta * (1 - k/(N+1)) * (m/(N+1))
         sigma[m,k] = sigma[k,m]
       }
+      mu_x = c(mu_x, X[i, 1] + k * (X[i+1, 1] - X[i, 1]) / (N+1))
+      mu_y = c(mu_y, X[i, 2] + k * (X[i+1, 2] - X[i, 2]) / (N+1))
+      
     }
     
     for (j in 1:M) {
-      mu_x = mu_y = numeric(N)
-      for (k in 1:N) {
-        mu_x[k] = X[i, 1] + k * (X[i+1, 1] - X[i, 1]) / (N+1)
-        mu_y[k] = X[i, 2] + k * (X[i+1, 2] - X[i, 2]) / (N+1)
-      }
-      
+      #simulating brownian bridge
       x = rmvnorm(1, mean = mu_x, sigma = par[4] * sigma)
       y = rmvnorm(1, mean = mu_y, sigma = par[4] * sigma)
       
+      #likelihood of brownian bridge
       L_k = 1
       L_k = L_k / dmvnorm(x, mean = mu_x, sigma = par[4] * sigma)
       L_k = L_k / dmvnorm(y, mean = mu_y, sigma = par[4] * sigma)
       
+      #adding Langevin process transition probability of proposed brownian bridge
       grad = bilinearGrad(X[i, ], covlist)
       u = delta * par[4] * (grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3]) / (2 * (N+1))
       L_k = L_k * dmvnorm(X[i, ], mean = c(x[1], y[1]) + u, sigma = diag(delta * par[4] / (N+1), 2, 2))
@@ -278,15 +281,14 @@ lik <- function(par, cl) {
     return(log(L))
   }
   
-  # Run in parallel
-  results <- parLapply(cl, i_list, compute_L_i)
-  total_log_likelihood <- sum(unlist(results))
+  results <- parLapply(cl, 2:(nrow(X)-1), compute_L_i)
+  L<- sum(unlist(results))
   
-  return(-total_log_likelihood)
+  return(-L)
 }
  
 
-#without importance sampling
+#monte carlo likelihood
 delta = dt*thin
 lik <- function(par){
   #log-likelihood
@@ -328,13 +330,12 @@ lik <- function(par){
 
 
 
-#parralellized importance sampling 
+#parralellized mont carlo
 delta = dt*thin
 lik <- function(par, cl) {
-  # Compute the list of i indices to parallelize
-  i_list <- 2:(nrow(X)-1)
+
   
-  # Function to compute log-likelihood contribution for a single i
+  #likelihood of one observation
   compute_L_i <- function(i) {
     L = 0
     for (j in 1:M) {
@@ -363,10 +364,10 @@ lik <- function(par, cl) {
   }
   
   # Run in parallel
-  results <- parLapply(cl, i_list, compute_L_i)
-  total_log_likelihood <- sum(unlist(results))
+  results <- parLapply(cl, 2:(nrow(X)-1), compute_L_i)
+  L <- sum(unlist(results))
   
-  return(-total_log_likelihood)
+  return(-L)
 }
 
 
@@ -378,7 +379,7 @@ stopCluster(cl)
 
 
 results = c()
-M = 60
+M = 50
 N = thin-1
 
 cl <- makeCluster(detectCores() - 1)
