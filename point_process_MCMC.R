@@ -199,6 +199,39 @@ lik <- function(par){
 
 
 
+library(parallel)
+
+# Define the function to evaluate
+func <- function(x, y) {
+  lik(c(x,2,-0.1,y))
+}
+# Create the grid
+x_vals <- seq(-8, 8, length.out = 200)
+y_vals <- seq(0.25, 3, length.out = 200)
+grid <- expand.grid(x = x_vals, y = y_vals)
+
+# Set up parallel cluster
+n_cores <- detectCores(logical = FALSE)
+cl <- makeCluster(n_cores)
+
+# Export necessary variables and functions to workers
+clusterExport(cl, varlist = c("func", "lik", "covlist", "Y", "x_vals", "y_vals", "grid", "lim"))
+
+# Evaluate in parallel
+grid$z <- parLapply(cl, seq_len(nrow(grid)), function(i) {
+  func(grid$x[i], grid$y[i])
+}) %>% unlist()
+
+# Stop the cluster
+stopCluster(cl)
+
+# Plot using ggplot2
+ggplot(grid, aes(x = x, y = y, fill = z)) +
+  geom_raster() +
+  scale_fill_viridis_c() +
+  labs(title = "Function Evaluation on Grid",
+       x = "beta1", y = "kappa", fill = "func(x, y)") +
+  theme_minimal()
 
 
 #starting values

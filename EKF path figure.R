@@ -23,7 +23,7 @@ ncov <- 2
 covlist <- list()
 #simulate spatial covariates wuing grf with matern covariance function
 for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1, rho = 50, sigma2 = 0.1, 
+  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1.3, rho = 50, sigma2 = 0.1, 
                                 resol = resol, raster_like = TRUE)
 }
 
@@ -33,12 +33,6 @@ ygrid <- seq(lim[3], lim[4], by=resol)
 xygrid <- expand.grid(xgrid,ygrid)
 dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/100
 covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
-
-
-
-# Compute utilisation distribution
-beta <- c(4,2,-0.1)
-UD <- getUD(covariates=covlist, beta=beta)
 
 
 ####################
@@ -102,6 +96,8 @@ hessian <- function(z, covlist, par){
 ###################
 ## Simulate data ##
 ###################
+#scaling parameter diffusion and time
+a = 1000000
 #max time for track
 Tmax <- 0.1
 #increment between times
@@ -111,15 +107,12 @@ time <- seq(0, Tmax, by = dt)
 #number of tracks to be generated
 ntrack <- 1
 #speed parameter for Langevin model
-speed <- 5
-#thinning for path
-thin = 10
+speed <- 5/a
 #Time grids
-times = seq(0, 0.1, dt)
+times = seq(0, Tmax, dt)
 
 
-beta = c(4, 2, -0.1)
-beta = 50*beta
+beta = c(4, 2, -0.1)*a
 
 
 #simulation
@@ -130,15 +123,15 @@ X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), co
 ###########
 
 c = qchisq(0.90, df = 2)
-axes_lengths = matrix(nrow = 11, ncol = 2)
+axes_lengths = matrix(nrow = length(times), ncol = 2)
 angle = c()
-path = matrix(nrow = 11, ncol = 2)
+path = matrix(nrow = length(times), ncol = 2)
 
 #mesh nodes
-m = thin -1
-delta = dt*thin/(m+1)
-Q = diag(delta*5,2,2)
-B = diag(delta*5/2,2,2)
+
+delta = dt
+Q = diag(delta*speed,2,2)
+B = diag(delta*speed/2,2,2)
 P = Q
 eig <- eigen(P)
 axes_lengths[1, ] = sqrt(eig$values * c)
@@ -148,12 +141,11 @@ x = c(0,0)
 path[1,] = x
 
 
-for (k in 1:(m+1)) {
+for (k in 1:(length(times)-1)) {
   #control vector
   u = bilinearGrad(x, covlist) %*% beta[1:3]
-  print(u)
-  
-  F_k = diag(1,2,2) + (delta*5/2)*hessian(x, covlist, beta) 
+
+  F_k = diag(1,2,2) + (delta*speed/2)*hessian(x, covlist, beta) 
   
   #predicted state estimate
   x = x + B %*% u
@@ -177,9 +169,8 @@ ellipse_df <- data.frame(
   a = axes_lengths[,1],
   b = axes_lengths[,2],
   angle = angle,
-  group = 1:11
+  group = 1:(length(time))
 )
-
 
 
 ggplot() +
@@ -194,6 +185,29 @@ ggplot() +
 ###########
 # 1D path #
 ###########
+
+#scaling parameter diffusion and time
+a = 1
+#max time for track
+Tmax <- 0.1
+#increment between times
+dt <- 0.01
+#time grid
+time <- seq(0, Tmax, by = dt)
+#number of tracks to be generated
+ntrack <- 1
+#speed parameter for Langevin model
+speed <- 5/a
+#Time grids
+times = seq(0, Tmax, dt)
+thin = 10
+
+beta = c(4, 2, -0.1)*a
+
+#simulation
+X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), cov_list = covlist)
+
+
 vars = c()
 path = matrix(nrow = 11, ncol = 2)
 
