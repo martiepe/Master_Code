@@ -22,20 +22,6 @@ lim <- c(-1, 1, -1, 1)*100
 resol <- 1
 ncov <- 1
 covlist <- list()
-#simulate spatial covariates wuing grf with matern covariance function
-for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1.5, rho = 50, sigma2 = 1, 
-                                resol = resol, raster_like = TRUE)
-}
-
-# Include squared distance to centre of map as covariate
-xgrid <- seq(lim[1], lim[2], by=resol)
-ygrid <- seq(lim[3], lim[4], by=resol)
-xygrid <- expand.grid(xgrid,ygrid)
-dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
-covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
-
-
 
 #perlin covariates
 covlist <- list()
@@ -51,7 +37,7 @@ xgrid <- seq(lim[1], lim[2], by=resol)
 ygrid <- seq(lim[3], lim[4], by=resol)
 xygrid <- expand.grid(xgrid,ygrid)
 dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
-covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+covlist[[ncov+1]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
 
 
 
@@ -70,15 +56,9 @@ ntrack <- 1
 #speed parameter for Langevin model
 speed <- 5
 
-# Time grids
-alltimes <- list()
-for(i in 1:ntrack)
-  alltimes[[i]] <- time
 
-# Generate tracks -- This is very computational and may take a few hours.
-alldat <- lapply(alltimes, function(times) {
-  
-})
+# Generate tracks
+beta = c(4,-0.1)
 
 X = simLangevinMM(beta = beta, gamma2 = speed, times = time, loc0 = c(0, 0), cov_list = covlist)
 
@@ -103,7 +83,7 @@ delta = dt*thin
 # Euler-Maruyama likelihood
 EM_lik <- function(par){
   grad = bilinearGradArray(X, covlist) 
-  u = par[1]*grad[,,1] + par[2]*grad[,,2] + par[3]*grad[,,3]
+  u = par[1]*grad[,,1] + par[2]*grad[,,2]
   N = nrow(X)
   l = 0
   for (i in 1:(N-1)) {
@@ -151,17 +131,17 @@ lik <- function(par, N, M){
       
       #
       grad = bilinearGrad(X[i, ], covlist)
-      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
       L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
       
       for (k in 1:(N-1)) {
         grad = bilinearGrad(c(x[k], y[k]), covlist)
-        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
         L_k = L_k*dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       }
       grad = bilinearGrad(c(x[N], y[N]), covlist)
-      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2] + grad[,3]*par[3])/(2*(N+1))
+      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
       L_k = L_k*dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
       
@@ -176,20 +156,20 @@ lik <- function(par, N, M){
   
 }
 
-
+X
 
 cl <- makeCluster(detectCores() - 1)
-clusterExport(cl, c("X", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad", "EM_lik"))
+clusterExport(cl, c("X", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad", "EM_lik", "lik"))
 
 #M = 50
 #N=9 intermediate steps
 compute_likelihood <- function(beta1){
-  return(lik(c(beta1, 2,-0.1, 5), 9, 50))
+  return(lik(c(beta1,-0.1, 5), 9, 50))
 }
 results1 <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 #N = 4intermediate steps
 compute_likelihood <- function(beta1){
-  return(lik(c(beta1, 2,-0.1, 5), 4, 50))
+  return(lik(c(beta1, -0.1, 5), 4, 50))
 }
 results2 <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 
@@ -197,22 +177,23 @@ results2 <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 #M = 20
 #N=9 intermediate steps
 compute_likelihood <- function(beta1){
-  return(lik(c(beta1, 2,-0.1, 5), 9, 20))
+  return(lik(c(beta1, -0.1, 5), 9, 20))
 }
 results3 <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 #N = 4intermediate steps
 compute_likelihood <- function(beta1){
-  return(lik(c(beta1, 2,-0.1, 5), 4, 20))
+  return(lik(c(beta1, -0.1, 5), 4, 20))
 }
 results4 <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 
 
 #Euler-Maruyama likelihood
 compute_likelihood <- function(beta1){
-  return(lik(c(beta1, 2,-0.1, 5), 4, 50))
+  return(lik(c(beta1, -0.1, 5), 4, 50))
 }
 resultsEM <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 
+stopCluster(cl)
 
 
 ggplot()+
