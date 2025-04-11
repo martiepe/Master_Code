@@ -71,9 +71,7 @@ X = simLangevinMM(beta = beta, gamma2 = speed, times = time, loc0 = c(0, 0), cov
 thin = 10
 #divided by six because of 5 extra points
 
-X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
-X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
-
+X = matrix(c(X[(0:(nrow(X)%/%thin -1))*thin +1,1], X[(0:(nrow(X)%/%thin -1))*thin +1,2]), ncol = 2)
 
 ##############
 # Likelihood #
@@ -87,7 +85,7 @@ EM_lik <- function(par){
   N = nrow(X)
   l = 0
   for (i in 1:(N-1)) {
-    l = l + dmvnorm(X[i+1, ] - X[i, ] - par[4]*delta*u[i, ]/2, mean = c(0,0), sigma = diag(delta*par[4],2,2), log = TRUE)
+    l = l + dmvnorm(X[i+1, ] - X[i, ] - par[3]*delta*u[i, ]/2, mean = c(0,0), sigma = diag(delta*par[3],2,2), log = TRUE)
   }
   return(-l)
 }
@@ -104,45 +102,48 @@ lik <- function(par, N, M){
   #for each observation in the track
   for (i in 2:(nrow(X)-1)) {
     L = 0
+    
+    
+    sigma = matrix(nrow = N, ncol = N)
+      
+    mu_x = c()
+    mu_y = c()
+    #sigma is the same as long as delta is the same, so it can be computed once
+    for (k in 1:N) {
+      for (m in 1:k) {
+        sigma[k,m] = delta*(1 - k/(N+1))*(m/(N+1))
+        sigma[m,k] = delta*(1 - k/(N+1))*(m/(N+1))
+      }
+      mu_x = c(mu_x, X[i, 1] + k*(X[i+1, 1] - X[i, 1])/(N+1))
+      mu_y = c(mu_y, X[i, 2] + k*(X[i+1, 2] - X[i, 2])/(N+1))
+    }
     #generating M brownian bridges
     for (j in 1:M) {
       L_k = 1
       #generating nodes
-      sigma = matrix(nrow = N, ncol = N)
       
-      mu_x = c()
-      mu_y = c()
-      #sigma is the same as long as delta is the same, so it can be computed once
-      for (k in 1:N) {
-        for (m in 1:k) {
-          sigma[k,m] = delta*(1 - k/(N+1))*(m/(N+1))
-          sigma[m,k] = delta*(1 - k/(N+1))*(m/(N+1))
-        }
-        mu_x = c(mu_x, X[i, 1] + k*(X[i+1, 1] - X[i, 1])/(N+1))
-        mu_y = c(mu_y, X[i, 2] + k*(X[i+1, 2] - X[i, 2])/(N+1))
-      }
+      x = rmvnorm(1, mean = mu_x, sigma = par[3]*sigma)
+      y = rmvnorm(1, mean = mu_y, sigma = par[3]*sigma)
       
-      x = rmvnorm(1, mean = mu_x, sigma = par[4]*sigma)
-      y = rmvnorm(1, mean = mu_y, sigma = par[4]*sigma)
-      
-      L_k = L_k/dmvnorm(x, mean = mu_x, sigma = par[4]*sigma)
-      L_k = L_k/dmvnorm(y, mean = mu_y, sigma = par[4]*sigma)
+      L_k = L_k/dmvnorm(x, mean = mu_x, sigma = par[3]*sigma)
+      L_k = L_k/dmvnorm(y, mean = mu_y, sigma = par[3]*sigma)
       
       
       #
       grad = bilinearGrad(X[i, ], covlist)
-      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
-      L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      print(grad[, 1])
+      u = delta*par[3]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
+      L_k = L_k*dmvnorm(X[i, ] , mean = c(x[1], y[1]) + u, sigma = diag(delta*par[3]/(N+1), 2, 2))
       
       
       for (k in 1:(N-1)) {
         grad = bilinearGrad(c(x[k], y[k]), covlist)
-        u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
-        L_k = L_k*dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+        u = delta*par[3]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
+        L_k = L_k*dmvnorm(c(x[k+1], y[k+1]) , mean = c(x[k], y[k]) + u, sigma = diag(delta*par[3]/(N+1), 2, 2))
       }
       grad = bilinearGrad(c(x[N], y[N]), covlist)
-      u = delta*par[4]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
-      L_k = L_k*dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      u = delta*par[3]*(grad[,1]*par[1] + grad[,2]*par[2])/(2*(N+1))
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = c(x[N], y[N]) + u, sigma = diag(delta*par[3]/(N+1), 2, 2))
       
       
       L = L + L_k/M
@@ -156,7 +157,9 @@ lik <- function(par, N, M){
   
 }
 
-X
+
+
+
 
 cl <- makeCluster(detectCores() - 1)
 clusterExport(cl, c("X", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad", "EM_lik", "lik"))
@@ -195,6 +198,7 @@ resultsEM <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 
 stopCluster(cl)
 
+tail(X)
 
 ggplot()+
   geom_line(aes(seq(-8, 8, 0.5), results1)) +
