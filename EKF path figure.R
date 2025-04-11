@@ -23,7 +23,7 @@ ncov <- 2
 covlist <- list()
 #simulate spatial covariates wuing grf with matern covariance function
 for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1, rho = 50, sigma2 = 0.1, 
+  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1.3, rho = 50, sigma2 = 0.1, 
                                 resol = resol, raster_like = TRUE)
 }
 
@@ -33,12 +33,6 @@ ygrid <- seq(lim[3], lim[4], by=resol)
 xygrid <- expand.grid(xgrid,ygrid)
 dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/100
 covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
-
-
-
-# Compute utilisation distribution
-beta <- c(4,2,-0.1)
-UD <- getUD(covariates=covlist, beta=beta)
 
 
 ####################
@@ -102,6 +96,8 @@ hessian <- function(z, covlist, par){
 ###################
 ## Simulate data ##
 ###################
+#scaling parameter diffusion and time
+a = 1000000
 #max time for track
 Tmax <- 0.1
 #increment between times
@@ -111,33 +107,31 @@ time <- seq(0, Tmax, by = dt)
 #number of tracks to be generated
 ntrack <- 1
 #speed parameter for Langevin model
-speed <- 5
+speed <- 5/a
+#Time grids
+times = seq(0, Tmax, dt)
 
-# Time grids
-times = seq(0, 0.1, dt)
 
-
-beta = c(4, 2, -0.1)
-#beta = 50*beta
+beta = c(4, 2, -0.1)*a
 
 
 #simulation
 X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), cov_list = covlist)
 
+###########
+# 2D path #
+###########
 
-
-# Eigen decomposition
-
-c = 4.605
-axes_lengths = matrix(nrow = 11, ncol = 2)
+c = qchisq(0.90, df = 2)
+axes_lengths = matrix(nrow = length(times), ncol = 2)
 angle = c()
-path = matrix(nrow = 11, ncol = 2)
+path = matrix(nrow = length(times), ncol = 2)
 
 #mesh nodes
-m = thin -1
-delta = dt*thin/(m+1)
-Q = diag(delta*5,2,2)
-B = diag(delta*5/2,2,2)
+
+delta = dt
+Q = diag(delta*speed,2,2)
+B = diag(delta*speed/2,2,2)
 P = Q
 eig <- eigen(P)
 axes_lengths[1, ] = sqrt(eig$values * c)
@@ -147,12 +141,11 @@ x = c(0,0)
 path[1,] = x
 
 
-for (k in 1:(m+1)) {
+for (k in 1:(length(times)-1)) {
   #control vector
   u = bilinearGrad(x, covlist) %*% beta[1:3]
-  print(u)
-  
-  F_k = diag(1,2,2) + (delta*5/2)*hessian(x, covlist, beta) 
+
+  F_k = diag(1,2,2) + (delta*speed/2)*hessian(x, covlist, beta) 
   
   #predicted state estimate
   x = x + B %*% u
@@ -168,7 +161,6 @@ for (k in 1:(m+1)) {
   
 }
 
-length(angle)
 
 # Build a data frame with ellipse parameters
 ellipse_df <- data.frame(
@@ -177,97 +169,90 @@ ellipse_df <- data.frame(
   a = axes_lengths[,1],
   b = axes_lengths[,2],
   angle = angle,
-  group = 1:11
+  group = 1:(length(time))
 )
-
 
 
 ggplot() +
   geom_path(aes(X[,1], X[,2]), color = "red") +
   geom_path(aes(path[,1], path[,2]), color = "black") +
   ggforce::geom_ellipse(aes(x0 = x, y0 = y, a = a, b = b, angle = angle),
-                        data = ellipse_df, fill = "blue", alpha = 0) +
-  labs(x = "x", y = "y")
+                        data = ellipse_df, alpha = 0) +
+  labs(x = "x", y = "y", title = "Extended Kalman filter 2D") +
+  theme_bw()
 
 
+###########
+# 1D path #
+###########
+
+#scaling parameter diffusion and time
+a = 1
+#max time for track
+Tmax <- 0.1
+#increment between times
+dt <- 0.01
+#time grid
+time <- seq(0, Tmax, by = dt)
+#number of tracks to be generated
+ntrack <- 1
+#speed parameter for Langevin model
+speed <- 5/a
+#Time grids
+times = seq(0, Tmax, dt)
+thin = 10
+
+beta = c(4, 2, -0.1)*a
+
+#simulation
+X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), cov_list = covlist)
 
 
+vars = c()
+path = matrix(nrow = 11, ncol = 2)
 
-
-
-#likelihood using extended kalman filter
-#assuming R = 0
+#mesh nodes
+m = thin -1
 delta = dt*thin/(m+1)
-lik3 <- function(par){
-  #log-likelihood
-  l = 0
+Q = diag(delta*5,2,2)
+B = diag(delta*5/2,2,2)
+P = Q
+vars = c(vars, P[1,1])
+#predicted state estimate
+x = c(0,0)
+path[1,] = x
+
+
+for (k in 1:(m+1)) {
+  #control vector
+  u = bilinearGrad(x, covlist) %*% beta[1:3]
   
-  for (j in 1:1) {
-    #defining transition covariance matrix
-    Q = diag(delta*par[4],2,2)
-    
-    #control matrix
-    B = diag(delta*par[4]/2,2,2)
-    
-    #initial covariance guess
-    P = 10*Q
-    
-    #initial state
-    z = X[1, ]
-    
-    for (i in 2:nrow(X)) {
-      #control vector
-      u = bilinearGrad(z, covlist) %*% par[1:3]
-      
-      
-      F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par)
-      
-      #predicted state estimate
-      z_p = z + B %*% u 
-      
-      #predicted estimate covariance 
-      P = F_k %*% P %*% t(F_k) + Q
-      
-      #innovation covariance
-      S = P 
-      
-      #updated state estimate
-      z =  X[i, ]
-      
-      #updated estimate covariance
-      P = diag(0,2,2)
-      
-      #adding likelihood contribution of i-th state
-      l = l - dmvnorm(c(X[i, ] - z_p), mean = c(0,0), sigma = S, log = T)
-      
-      
-      for (k in 1:m) {
-        #control vector
-        u = bilinearGrad(z, covlist) %*% par[1:3]
-        
-        
-        F_k = diag(1,2,2) + (delta*par[4]/2)*hessian(z, covlist, par) 
-        
-        #predicted state estimate
-        z_p = z + B %*% u
-        
-        #predicted estimate covariance 
-        P = F_k %*% P %*% t(F_k) + Q
-        
-        #innovation covariance
-        S = P 
-        
-        #updated state estimate
-        z = z_p 
-        
-        #updated estimate covariance
-        P = P
-        
-      }
-      
-    }
-  }
-  return(l)
+  
+  F_k = diag(1,2,2) + (delta*5/2)*hessian(x, covlist, beta) 
+  
+  #predicted state estimate
+  x = x + B %*% u
+  path[k+1,] = x
+  #predicted estimate covariance 
+  P = F_k %*% P %*% t(F_k) + Q
+  vars = c(vars, P[1,1]) 
+  #innovation covariance
+  S = P 
+  
   
 }
+
+df <- data.frame(t = seq(0, 0.1, 0.01), x = path[,1], lower = path[,1] - 1.645*sqrt(vars), upper = path[,1] + 1.645*sqrt(vars))
+
+
+ggplot(df, aes(t, x)) +
+  geom_line() +
+  geom_path(aes(seq(0, 0.1, 0.01), X[,1]), color = "red") +
+  geom_ribbon(aes(ymin =lower, ymax = upper), , alpha = 0.3, fill = "blue") +
+  labs(x = "t", y = "x", title = "Extended Kalman filter 1D") +
+  theme_bw() 
+
+
+
+
 

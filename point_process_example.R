@@ -17,7 +17,7 @@ set.seed(1)
 ## Define covariates ##
 #######################
 # Generate two random covariates
-lim <- c(-1, 1, -1, 1)*150
+lim <- c(-1, 1, -1, 1)*100
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -37,6 +37,19 @@ covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygr
 beta <- c(4,2,-0.1)
 
 
+
+
+UD = getUD(covlist, beta)
+
+
+
+ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
+                 legend.title = element_text(size=12), legend.text = element_text(size=12))
+c1plot <- plotRaster(rhabitToRaster(covlist[[1]]), scale.name = expression(c[1])) + ggtheme
+c2plot <- plotRaster(rhabitToRaster(covlist[[2]]), scale.name = expression(c[2])) + ggtheme
+UDplot <- plotRaster(rhabitToRaster(UD), scale.name = expression(pi)) + ggtheme
+
+UDplot
 
 
 ##############################
@@ -93,14 +106,14 @@ for (i in 1:n) {
 }
 
 Y = matrix(Y, ncol = 2)
-
+s = 0
 N
 n
 
 
 #plotting simulations
 ggplot() +
-  geom_point(aes(S[,1],S[,2]), colour = "grey80")+
+  geom_point(aes(Y[,1],Y[,2]), colour = "grey80")+
   coord_cartesian(xlim = c(-100, 100), ylim= c(-100, 100))
 
 
@@ -116,12 +129,12 @@ ggplot() +
 ################
 
 #likelihood function
-lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
+lik <- function(par){
   #log-likelihood
   l = 0
 
   #covariate field used to calculate intensity
-  cov_field = exp(B_1*covlist[[1]]$z + B_2*covlist[[2]]$z + B_3*covlist[[3]]$z)
+  cov_field = exp(par[1]*covlist[[1]]$z + par[2]*covlist[[2]]$z + par[3]*covlist[[3]]$z)
   
   #finding intensity of study area
   lambda_sum = 0
@@ -132,10 +145,10 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
       y1 = j
       y2 = j+1
       
-      f11 = kappa*(cov_field[x1+lim[2]+1, y1+lim[2]+1])
-      f12 = kappa*(cov_field[x1+lim[2]+1, y2+lim[2]+1])
-      f21 = kappa*(cov_field[x2+lim[2]+1, y1+lim[2]+1])
-      f22 = kappa*(cov_field[x2+lim[2]+1, y2+lim[2]+1])
+      f11 = par[4]*(cov_field[x1+lim[2]+1, y1+lim[2]+1])
+      f12 = par[4]*(cov_field[x1+lim[2]+1, y2+lim[2]+1])
+      f21 = par[4]*(cov_field[x2+lim[2]+1, y1+lim[2]+1])
+      f22 = par[4]*(cov_field[x2+lim[2]+1, y2+lim[2]+1])
       
       
       lambda_sum = lambda_sum + ((y2+y1)*((x2+x1)*f11 + (x2-3*x1)*f21) + (y2-3*y1)*((x2+x1)*f12 + (x2-3*x1)*f22))/4
@@ -154,24 +167,59 @@ lik <- function(X, Y, B_1, B_2, B_3, kappa, ntrack, Delta){
     y1 = floor(Y[i, 2])
     y2 = ceiling(Y[i, 2])
     
-    f11 = kappa*cov_field[x1+lim[2]+1, y1+lim[2]+1]
-    f12 = kappa*cov_field[x1+lim[2]+1, y2+lim[2]+1]
-    f21 = kappa*cov_field[x2+lim[2]+1, y1+lim[2]+1]
-    f22 = kappa*cov_field[x2+lim[2]+1, y2+lim[2]+1]
+    
+    if (x == x2) {
+      print(x)
+    }
+    
+    if(x2 == x1){
+      x1 = x1-1
+      x2 = x2+1
+    }
+    if(y2 == y1){
+      y1 = y1-1
+      y2 = y2+1
+    }
+
+    
+    
+    f11 = par[4]*cov_field[x1+lim[2]+1, y1+lim[2]+1]
+    f12 = par[4]*cov_field[x1+lim[2]+1, y2+lim[2]+1]
+    f21 = par[4]*cov_field[x2+lim[2]+1, y1+lim[2]+1]
+    f22 = par[4]*cov_field[x2+lim[2]+1, y2+lim[2]+1]
     
     #intensity at location
     lambda_s = ((y2-y)/(y2-y1))*(f11*(x2-x)/(x2-x1) + f21*(x-x1)/(x2-x1)) + ((y-y1)/(y2-y1))*(f12*(x2-x)/(x2-x1) + f22*(x-x1)/(x2-x1))
-    
+
     l = l + log(lambda_s)
   }
   
-  
-  return(l)
+  if (is.nan(-l)) {
+    print(par)
+  }
+  return(-l)
 }
 
 
+
+
+
+lik(c(4,2,-0.1,0.001))
 #par: B1, B2, B3, kappa
 par = c(0,0,0,1)
+#
+o = optim(par, lik)
+o
+warnings()
 
-o = optim(lik, par)
+t1 = Sys.time()
+cl <- makeCluster(12)
+clusterExport(cl, c("Y", "covlist", ))
+o = optim(c(0,0,0,1), lik, cl = cl, method = "Nelder-Mead", control = list(maxit = 200))
+stopCluster(cl)
+Sys.time() - t1
+o
+
+
+
 
