@@ -198,7 +198,6 @@ resultsEM <- parLapply(cl, seq(-8, 8, 0.5), compute_likelihood)
 
 stopCluster(cl)
 
-tail(X)
 
 ggplot()+
   geom_line(aes(seq(-8, 8, 0.5), results1)) +
