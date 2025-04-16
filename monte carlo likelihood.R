@@ -89,7 +89,8 @@ time <- seq(0, Tmax, by = dt)
 ntrack <- 1
 #speed parameter for Langevin model
 speed <- 5
-
+#covariate coefficients
+beta <- c(4,2,-0.1)
 # Time grids
 alltimes <- list()
 for(i in 1:ntrack)
@@ -118,6 +119,8 @@ thin = 5
 #divided by six because of 5 extra points
 
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+times = alldat[[1]]$t[(0:(nrow(X)%/%thin -1))*thin +1]
+ID = alldat[[1]]$ID[(0:(nrow(X)%/%thin -1))*thin +1]
 X = X[(0:(nrow(X)%/%thin -1))*thin +1, ]
 
 
@@ -330,7 +333,7 @@ lik <- function(par){
 
 
 
-#parralellized mont carlo
+#parralellized monte carlo
 delta = dt*thin
 lik <- function(par, cl) {
 
@@ -371,6 +374,157 @@ lik <- function(par, cl) {
 }
 
 
+###### one brownian bridge importance sampling estimate #####
+N = 5
+M = 50
+delta = dt*thin
+#find the diffusion constant to be used
+gradArray = bilinearGradArray(X, covlist)
+locs = X
+gammasq = langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)$gamma2Hat
+
+#simulate brownian bridges
+sigma = matrix(nrow = N, ncol = N)
+for (k in 1:N) {
+  for (m in 1:k) {
+    sigma[k,m] = gammasq*delta*(1 - k/(N+1))*(m/(N+1))
+    sigma[m,k] = gammasq*delta*(1 - k/(N+1))*(m/(N+1))
+  }
+}
+
+B <- array(data = NA, c(2, nrow(X)-1, M, N))
+bridge <- array(data = NA, c(2, M, N))
+#probability of each bridge
+P <- c()
+for (j in 1:M) {
+  bridge[1, j, 1:N] = rmvnorm(1, mean = rep(0, N), sigma = sigma)
+  bridge[2, j, 1:N] = rmvnorm(1, mean = rep(0, N), sigma = sigma)
+  
+  P = c(P, dmvnorm(bridge[1, j, 1:N], rep(0, N), sigma)*dmvnorm(bridge[2, j, 1:N], rep(0, N), sigma))
+}
+
+
+for (k in 1:(nrow(X)-1)) {
+  mu_x = c()
+  mu_y = c()
+  for (i in 1:N) {
+    mu_x = c(mu_x, X[k, 1] + i*(X[k+1, 1] - X[k, 1])/(N+1))
+    mu_y = c(mu_y, X[k, 2] + i*(X[k+1, 2] - X[k, 2])/(N+1))
+  }
+  for (j in 1:M) {
+    B[1, k, j, 1:N] = mu_x + bridge[1, j, 1:N]
+    B[2, k, j, 1:N] = mu_y + bridge[2, j, 1:N]
+  }
+}
+
+
+#find the gradient at the bridge nodes
+Grad <- array(data = NA, c(ncov +1,nrow(X)-1, M, N, 2))
+t1 <- Sys.time()
+for (k in 1:(nrow(X)-1)) {
+  for(i in 1:M){
+    grad = bilinearGradArray(t(B[1:2, k, i, 1:N]), covlist)
+    for (j in 1:(ncov+1)) {
+      Grad[j, k, i, 1:N, 1] = grad[,1,j]
+      Grad[j, k, i, 1:N, 2] = grad[,2,j]
+    }
+  }
+}
+Sys.time()- t1
+
+
+delta = dt*thin
+lik <- function(par){
+  #log-likelihood
+  l = 0
+  
+  #number of simulations
+  
+  #for each observation in the track
+  for (i in 1:(nrow(X)-1)) {
+    L = 0
+    for (j in 1:M) {
+      L_k = 1
+      #brownian bridge contribution to likelihood
+      L_k = L_k/P[m]
+      
+      #adding Langevin process transition probability of proposed brownian bridge
+      
+      u = delta*par[4]*(gradArray[i]*par[1] + gradArray[i]*par[2] + gradArray[i]*par[3])/(2*(N+1))
+      L_k = L_k*dmvnorm(c(B[1, i, j, 1], B[2, i, j, 1]) , mean = X[i, ] + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+
+      
+      for (k in 1:(N-1)) {
+        u = delta*par[4]*(Grad[1, i, j, k, ]*par[1] + Grad[2, i, j, k, ]*par[2] + Grad[3, i, j, k, ]*par[3])/(2*(N+1))
+        L_k = L_k*dmvnorm(c(B[1, i, j, k+1], B[2, i, j, k+1]) , mean = c(B[1, i, j, k], B[2, i, j, k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      }
+      
+      u = delta*par[4]*(Grad[1, 1:2, i, j, N]*par[1] + Grad[2, 1:2, i, j, N]*par[2] + Grad[3, 1:2, i, j, N]*par[3])/(2*(N+1))
+      L_k = L_k*dmvnorm(X[i+1, ] , mean = c(B[1, i, j, N], B[2, i, j, N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
+      
+      
+      L = L + L_k/M
+    }
+    
+    l = l + log(L)
+    
+  }
+  
+  return(-l)
+  
+}
+
+#vectorized
+lik <- function(par){
+  #log-likelihood
+  l = 0
+  
+  #number of simulations
+  
+  #for each observation in the track
+  for (i in 1:(nrow(X)-1)) {
+    l = 0
+    L_k = 1/P
+    
+    # Add endpoints to all samples (M x (N+2) matrices)
+    # calc initial gradient
+    x_samples = B[1, i, , ]
+    y_samples = B[2, i, , ]
+    
+    grad_0 <- t(gradArray[i, , ])
+    u_0 <- delta_par * 
+      (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
+    
+    full_x <- cbind(X[i,1], x_samples, X[i+1,1])
+    full_y <- cbind(X[i,2], y_samples, X[i+1,2])
+    # likelihood of all locations
+    L_k <- sapply(seq(M), function(j) {
+      grads <- Grad[ , , i, j, ]
+      us <- delta_par * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      prod(mvnfast::dmvn(cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                           cbind(full_x[j,0:N+1], full_y[j,0:N+1]) - us, 
+                         matrix(c(0,0)),
+                         sigma))
+    })*L_k
+    
+    
+    l = l + log(L)
+    
+  }
+  
+  return(-l)
+  
+}
+
+
+t1 = Sys.time()
+lik(c(4,2,-0.1,5))
+Sys.time() - t1
+
+
+################
 
 cl <- makeCluster(detectCores() - 1)
 clusterExport(cl, c("X", "M", "N", "delta", "covlist", "rmvnorm", "dmvnorm", "bilinearGrad"))
