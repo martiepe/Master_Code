@@ -491,8 +491,9 @@ lik <- function(par){
     x_samples = B[1, i, , ]
     y_samples = B[2, i, , ]
     
-    grad_0 <- t(gradArray[i, , ])
-    u_0 <- delta_par * 
+    grad_0 <- array(data = t(gradArray[i, , ]), c(3,1,2))
+    #t(gradArray[i, , ])
+    u_0 <- (delta*par[4]/((N+1)*2)) * 
       (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
     
     full_x <- cbind(X[i,1], x_samples, X[i+1,1])
@@ -500,23 +501,27 @@ lik <- function(par){
     # likelihood of all locations
     L_k <- sapply(seq(M), function(j) {
       grads <- Grad[ , , i, j, ]
-      us <- delta_par * 
-        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- (delta*par[4]/((N+1)*2)) * 
+        t(par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
       us <- rbind(u_0, us)
-      prod(mvnfast::dmvn(cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
-                           cbind(full_x[j,0:N+1], full_y[j,0:N+1]) - us, 
+      prod(mvnfast::dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                            cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                          matrix(c(0,0)),
-                         sigma))
+                         diag(delta*par[4], 2, 2)))
     })*L_k
     
     
-    l = l + log(L)
+    l = l + log(sum(L_k/M))
     
   }
   
   return(-l)
   
 }
+
+
+
+?bilinearGradArray
 
 
 t1 = Sys.time()
