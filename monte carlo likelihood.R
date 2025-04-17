@@ -452,7 +452,7 @@ lik <- function(par){
     for (j in 1:M) {
       L_k = 1
       #brownian bridge contribution to likelihood
-      L_k = L_k/P[m]
+      L_k = L_k/P[j]
       
       #adding Langevin process transition probability of proposed brownian bridge
       
@@ -465,7 +465,7 @@ lik <- function(par){
         L_k = L_k*dmvnorm(c(B[1, i, j, k+1], B[2, i, j, k+1]) , mean = c(B[1, i, j, k], B[2, i, j, k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       }
       
-      u = delta*par[4]*(Grad[1, 1:2, i, j, N]*par[1] + Grad[2, 1:2, i, j, N]*par[2] + Grad[3, 1:2, i, j, N]*par[3])/(2*(N+1))
+      u = delta*par[4]*(Grad[1, i, j, N, ]*par[1] + Grad[2, i, j, N, ]*par[2] + Grad[3, i, j, N, ]*par[3])/(2*(N+1))
       L_k = L_k*dmvnorm(X[i+1, ] , mean = c(B[1, i, j, N], B[2, i, j, N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
       
       
@@ -489,7 +489,6 @@ lik <- function(par){
   
   #for each observation in the track
   for (i in 1:(nrow(X)-1)) {
-    l = 0
     L_k = 1/P
     
     # Add endpoints to all samples (M x (N+2) matrices)
@@ -498,7 +497,7 @@ lik <- function(par){
     y_samples = B[2, i, , ]
     
     grad_0 <- array(data = t(gradArray[i, , ]), c(3,1,2))
-    #t(gradArray[i, , ])
+    
     u_0 <- (delta*par[4]/((N+1)*2)) * 
       (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
     
@@ -506,14 +505,14 @@ lik <- function(par){
     full_y <- cbind(X[i,2], y_samples, X[i+1,2])
     # likelihood of all locations
     L_k <- sapply(seq(M), function(j) {
-      grads <- Grad[ , , i, j, ]
+      grads <- Grad[ , i, j, , ]
       us <- (delta*par[4]/((N+1)*2)) * 
-        t(par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
       us <- rbind(u_0, us)
       prod(mvnfast::dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                             cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                          matrix(c(0,0)),
-                         diag(delta*par[4], 2, 2)))
+                         diag(delta*par[4]/(N+1), 2, 2)))
     })*L_k
     
     
@@ -526,76 +525,27 @@ lik <- function(par){
 }
 
 
-
-
-i = 1
-M = 50
-
-
-L = 0
-for (j in 1:M) {
-  L_k = 1
-  #brownian bridge contribution to likelihood
-  L_k = L_k/P[m]
-  
-  #adding Langevin process transition probability of proposed brownian bridge
-  
-  u = delta*par[4]*(gradArray[i, , 1]*par[1] + gradArray[i, , 2]*par[2] + gradArray[i, , 3]*par[3])/(2*(N+1))
-  L_k = L_k*dmvnorm(c(B[1, i, j, 1], B[2, i, j, 1]) , mean = X[i, ] + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
-  
-  
-  for (k in 1:(N-1)) {
-    u = delta*par[4]*(Grad[1, i, j, k, ]*par[1] + Grad[2, i, j, k, ]*par[2] + Grad[3, i, j, k, ]*par[3])/(2*(N+1))
-    L_k = L_k*dmvnorm(c(B[1, i, j, k+1], B[2, i, j, k+1]) , mean = c(B[1, i, j, k], B[2, i, j, k]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
-  }
-  
-  u = delta*par[4]*(Grad[1, i, j, N, ]*par[1] + Grad[2, i, j, N, ]*par[2] + Grad[3, i, j, N, ]*par[3])/(2*(N+1))
-  L_k = L_k*dmvnorm(X[i+1, ] , mean = c(B[1, i, j, N], B[2, i, j, N]) + u, sigma = diag(delta*par[4]/(N+1), 2, 2))
-  
-  
-  L = L + L_k/M
-}
-
-log(L)
-
-
-
-
-
-
-l = 0
-L_k = 1/P
-
-# Add endpoints to all samples (M x (N+2) matrices)
-# calc initial gradient
-x_samples = B[1, i, , ]
-y_samples = B[2, i, , ]
-
-grad_0 <- array(data = t(gradArray[i, , ]), c(3,1,2))
-#t(gradArray[i, , ])
-u_0 <- (delta*par[4]/((N+1)*2)) * 
-  (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
-
-full_x <- cbind(X[i,1], x_samples, X[i+1,1])
-full_y <- cbind(X[i,2], y_samples, X[i+1,2])
-# likelihood of all locations
-L_k <- sapply(seq(M), function(j) {
-  grads <- Grad[ , i, j, , ]
-  us <- (delta*par[4]/((N+1)*2)) * 
-    (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
-  us <- rbind(u_0, us)
-  prod(mvnfast::dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
-                        cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
-                     matrix(c(0,0)),
-                     diag(delta*par[4]/(N+1), 2, 2)))
-})*L_k
-
-log(sum(L_k/M))
-
-
 t1 = Sys.time()
 lik(c(4,2,-0.1,5))
 Sys.time() - t1
+
+
+library(optimParallel)
+
+t1 = Sys.time()
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "mvnfast::dmvn"))
+o = optimParallel(c(0,0,0,1), lik, cl = cl)
+stopCluster(cl)
+Sys.time() - t1
+o
+
+
+
+
+
+
+
 
 
 ################
