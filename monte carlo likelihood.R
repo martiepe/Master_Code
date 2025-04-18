@@ -375,8 +375,8 @@ lik <- function(par, cl) {
 
 
 ###### one brownian bridge importance sampling estimate #####
-N = 5
-M = 50
+N = thin-1
+M = 100
 delta = dt*thin
 #find the diffusion constant to be used
 gradArray = bilinearGradArray(X, covlist)
@@ -434,11 +434,7 @@ Sys.time()- t1
 
 
 
-
-
-
-
-
+#not vectorized
 delta = dt*thin
 lik <- function(par){
   #log-likelihood
@@ -509,7 +505,7 @@ lik <- function(par){
       us <- (delta*par[4]/((N+1)*2)) * 
         (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
       us <- rbind(u_0, us)
-      prod(mvnfast::dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+      prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                             cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                          matrix(c(0,0)),
                          diag(delta*par[4]/(N+1), 2, 2)))
@@ -529,14 +525,15 @@ t1 = Sys.time()
 lik(c(4,2,-0.1,5))
 Sys.time() - t1
 
-
+library(mvnfast)
 library(optimParallel)
 
 t1 = Sys.time()
 cl <- makeCluster(detectCores() - 1)
-clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "mvnfast::dmvn"))
-o = optimParallel(c(0,0,0,1), lik, cl = cl)
-stopCluster(cl)
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn"))
+setDefaultCluster(cl=cl)
+o = optimParallel(c(0,0,0,1), lik)
+setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 o
 
