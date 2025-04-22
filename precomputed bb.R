@@ -318,9 +318,8 @@ lik_grad <- function(par){
                    cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                 matrix(c(0,0)),
                 diag(delta*par[4]/(N+1), 2, 2)))
-      
-      
     })*P[i, ]
+    
     
     lik_grad_k <- sapply(seq(M), function(j){
       grads <- Grad[ , i, j, , ]
@@ -336,12 +335,11 @@ lik_grad <- function(par){
       rbind(g%*%D, 2/par[4] + (delta/2)*t(D)%*%D)
       
     })
+    lik_grad[1] = lik_grad[1] - delta*par[4]*sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k))
+    lik_grad[2] = lik_grad[2] - delta*par[4]*sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k))
+    lik_grad[3] = lik_grad[3] - delta*par[4]*sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k))
     
-    lik_grad[1] = lik_grad[1] - delta*par[4]*sum(lik_grad_k[1, ]*L_k*P[i, ])/(2*M*sum(L_k))
-    lik_grad[2] = lik_grad[2] - delta*par[4]*sum(lik_grad_k[2, ]*L_k*P[i, ])/(2*M*sum(L_k))
-    lik_grad[3] = lik_grad[3] - delta*par[4]*sum(lik_grad_k[3, ]*L_k*P[i, ])/(2*M*sum(L_k))
-    
-    lik_grad[4] = lik_grad[4] - sum(lik_grad_k[1, ]*L_k*P[i, ])/(M*sum(L_k))
+    lik_grad[4] = lik_grad[4] - sum(lik_grad_k[4, ]*L_k)/(sum(L_k))
     
     
     l = l + log(sum(L_k/M))
@@ -358,6 +356,17 @@ lik_grad(c(4,2,-0.1,5))
 t1 = Sys.time()
 lik_grad(c(4,2,-0.1,5))
 Sys.time() - t1
+
+
+
+
+
+
+
+
+
+
+
 
 # -1.717325 -14.472553 -27.748698 114.346584
 t1 = Sys.time()
