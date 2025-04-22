@@ -257,11 +257,6 @@ lik <- function(par){
 
 
 
-
-
-
-
-
 t1 = Sys.time()
 lik(c(4,2,-0.1,5))
 Sys.time() - t1
@@ -276,10 +271,6 @@ o = optimParallel(c(0,0,0,1), lik)
 setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 o
-
-
-
-
 
 
 
@@ -351,17 +342,92 @@ lik_grad <- function(par){
 }
 
 
+
+
+#vectorized and paralellized likelihood and gradient function
+lik_grad <- function(par, cl){
+  #log-likelihood
+  l = 0
+  lik_grad = c(0,0,0,0)
+  #number of simulations
+  
+  compute <- function(i){
+    L_k = 1
+    lik_grad_k = 0
+    # Add endpoints to all samples (M x (N+2) matrices)
+    # calc initial gradient
+    x_samples = B[1, i, , ]
+    y_samples = B[2, i, , ]
+    
+    grad_0 <- array(data = t(gradArray[i, , ]), c(3,1,2))
+    
+    u_0 <- (delta*par[4]/((N+1)*2)) * 
+      (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
+    
+    full_x <- cbind(X[i,1], x_samples, X[i+1,1])
+    full_y <- cbind(X[i,2], y_samples, X[i+1,2])
+    # likelihood of all locations
+    L_k <- sapply(seq(M), function(j) {
+      grads <- Grad[ , i, j, , ]
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                   cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
+                matrix(c(0,0)),
+                diag(delta*par[4]/(N+1), 2, 2)))
+    })*P[i, ]
+    
+    
+    lik_grad_k <- sapply(seq(M), function(j){
+      grads <- Grad[ , i, j, , ]
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      
+      g = cbind(grad_0[,1,],array(aperm(Grad[ , i, j, , ], c(1, 3, 2)), dim = c(3, 2 * N)))
+      
+      D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                      cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
+      
+      rbind(g%*%D, -(N+1)/par[4] + (N+1)/(2*delta*par[4]^2)*t(D)%*%D + (1/(2*par[4]))* t(t(g)%*%par[1:3]) %*% D)
+      
+    })
+
+    return(c(log(sum(L_k/M)), -sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[4, ]*L_k)/(sum(L_k))))
+  }
+  
+  results <- parLapply(cl, 1:(nrow(X)-1), compute)
+  
+  l = sum(unlist(results)[(1:(nrow(X)-1))*5 -4])
+  lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
+  lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
+  lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
+  lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
+  
+  
+  return(list(l = -l, g = lik_grad))
+  
+}
+
+
+# test speed of paralellized and vectorized likelihood and score
+cl <- makeCluster(10)
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
 t1 = Sys.time()
-lik_grad(c(4,2,-0.1,5))
+lik_grad(c(4,2,-0.1,5), cl)
 Sys.time() - t1
+stopCluster(cl)
 
 
 
-
-
-# Use optim
-result <- optim(par = c(0,0,0,1), fn = function(x) lik_grad(x)$l, gr = function(x) lik_grad(x)$g)
-
+#using paralellized and vectorized likelihood in optim
+cl <- makeCluster(detectCores()-1)
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
+t1 = Sys.time()
+optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g)
+Sys.time() - t1
+stopCluster(cl)
 
 
 
