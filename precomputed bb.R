@@ -327,17 +327,17 @@ lik_grad <- function(par){
         (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
       us <- rbind(u_0, us)
       
-      g = (delta*par[4]/((N+1)*2))*cbind(grad_0[,1,],array(aperm(Grad[ , i, j, , ], c(1, 3, 2)), dim = c(3, 2 * N)))
+      g = cbind(grad_0[,1,],array(aperm(Grad[ , i, j, , ], c(1, 3, 2)), dim = c(3, 2 * N)))
       
       D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                    cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
-
-      rbind(g%*%D, 2/par[4] + (delta/2)*t(D)%*%D)
+      
+      rbind(g%*%D, -(N+1)/par[4] + (N+1)/(2*delta*par[4]^2)*t(D)%*%D + (1/(2*par[4]))* t(t(g)%*%par[1:3]) %*% D)
       
     })
-    lik_grad[1] = lik_grad[1] - delta*par[4]*sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k))
-    lik_grad[2] = lik_grad[2] - delta*par[4]*sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k))
-    lik_grad[3] = lik_grad[3] - delta*par[4]*sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k))
+    lik_grad[1] = lik_grad[1] - sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k))
+    lik_grad[2] = lik_grad[2] - sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k))
+    lik_grad[3] = lik_grad[3] - sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k))
     
     lik_grad[4] = lik_grad[4] - sum(lik_grad_k[4, ]*L_k)/(sum(L_k))
     
@@ -350,8 +350,6 @@ lik_grad <- function(par){
   
 }
 
-lik_grad(c(4,2,-0.1,5))
-
 
 t1 = Sys.time()
 lik_grad(c(4,2,-0.1,5))
@@ -360,47 +358,12 @@ Sys.time() - t1
 
 
 
-
-
-
-
-
-
-
-
-# -1.717325 -14.472553 -27.748698 114.346584
-t1 = Sys.time()
-grad(lik, x = c( 4.02595981,  2.13715837, -0.07482453,  4.95182969))
-Sys.time() - t1
-
-
-
-
-t1 = Sys.time()
-lik_grad(c(4,2,-0.1,5))
-Sys.time() - t1
-
-
-t1 = Sys.time()
-lik(c(4,2,-0.1,5))
-Sys.time() - t1
-
-library(numDeriv)
-
-
-
-# Define the function and gradient
-func_and_grad <- function(x) {
-  f_val <- sum(x^2)  # Example function: sum of squares
-  grad_val <- 2 * x   # Gradient: derivative of sum of squares
-  list(value = f_val, gradient = grad_val)
-}
 
 # Use optim
-result <- optim(par = c(1, 2), fn = function(x) func_and_grad(x)$value, gr = function(x) func_and_grad(x)$gradient)
+result <- optim(par = c(0,0,0,1), fn = function(x) lik_grad(x)$l, gr = function(x) lik_grad(x)$g)
 
 
-result
+
 
 
 
