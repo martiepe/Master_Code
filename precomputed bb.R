@@ -425,7 +425,7 @@ stopCluster(cl)
 cl <- makeCluster(detectCores()-1)
 clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
 t1 = Sys.time()
-optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g)
+optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
 Sys.time() - t1
 stopCluster(cl)
 
