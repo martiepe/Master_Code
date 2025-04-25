@@ -98,7 +98,7 @@ getEstimates <- function(thin){
   time <- seq(0, Tmax, by = dt)
   #speed parameter for Langevin model
   speed <- 5
-  #covariate coefficients
+  ncov = 2
   # Time grids
   alltimes <- list()
   for(i in 1:1)
@@ -260,25 +260,28 @@ getEstimates <- function(thin){
 }
 
 
-t1 = Sys.time()
+
+set.seed(123)
+
+
+
 cl <- makeCluster(detectCores()-1)
 clusterExport(cl, c("dmvn", "rmvn", "getEstimates", "bilinearGradVec", "simLangevinMM", "covlist", "bilinearGradArray", "langevinUD", "optim"))
-#result using thin = 100
-result = parLapply(cl, rep(100, 25), getEstimates)
-stopCluster(cl)
-Sys.time() - t1
-
-
-
-
-df = data.frame()
-for (thin in c(10, 50, 100)) {
-  result = parLapply(cl, rep(100, 25), getEstimates)
+params = matrix(NA, ncol = 5, nrow = 3*100)
+for (i in 1:10) {
+  t1 = Sys.time()
+  result = parLapply(cl, rep(c(10, 50, 100), 10), getEstimates)
   
+  for (j in 1:30) {
+    params[i*30 + j, 1:4] = result[[j]]
+    params[i*30 + j, 5] = rep(c(10, 50, 100), 10)[j]
+  }
+  
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = params[5])
+  save(foo,file="data.Rda")
+  print(df)
+  Sys.time() - t1
 }
-
-
-
-
+stopCluster(cl)
 
 
