@@ -94,14 +94,14 @@ set.seed(123)
 
 
 
-params = matrix(NA, ncol = 5, nrow = 4*100)
+params = matrix(NA, ncol = 5, nrow = 5*100)
 for (ik in 1:100) {
-  for (jk in 1:4) {
+  for (jk in 1:5) {
     beta <- c(4,2,-0.1)
     thin = 100
     delta = dt*thin
-    N = c(4,9,49,99)[jk]
-    M = 50
+    N = 49
+    M = c(5, 10, 50, 100, 200)[jk]
     n_obs = 5000
     dt = 0.01
     Tmax = n_obs*thin*dt
@@ -255,7 +255,7 @@ for (ik in 1:100) {
     }
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(detectCores()-2)
+    cl <- makeCluster(10)
     clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
     
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
@@ -263,44 +263,14 @@ for (ik in 1:100) {
     stopCluster(cl)
     
     print(o$par)
-    params[ik*4+jk-4, 1:4] = o$par
-    params[ik*4+jk-4, 5] = N
+    params[ik*5+jk-5, 1:4] = o$par
+    params[ik*5+jk-5, 5] = N
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
-  save(df,file="varying_N_estimates.Rda")
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = params[5])
+  save(df,file="varying_M_estimates.Rda")
   
   
   print(ik)
 }
-
-
-
-p1 <- ggplot(data = df, aes(x = N, y = beta1)) +
-  geom_boxplot() +
-  geom_hline(yintercept  = 4, color = "red", linetype = 2) +
-  labs(title = "Beta_1") +
-  theme_bw()
-
-p2 <- ggplot(data = df, aes(x = N, y = beta2)) +
-  geom_boxplot() +
-  geom_hline(yintercept  = 2, color = "red", linetype = 2) +
-  labs(title = "Beta_2") +
-  theme_bw()
-
-p3 <- ggplot(data = df, aes(x = N, y = beta3)) +
-  geom_boxplot() +
-  geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
-  labs(title = "Beta_3") +
-  theme_bw()
-
-p4 <- ggplot(data = df, aes(x = N, y = gammasq)) +
-  geom_boxplot() +
-  geom_hline(yintercept  = 5, color = "red", linetype = 2) +
-  labs(title = "gamma^2") +
-  theme_bw()
-
-
-grid.arrange(p1,p2,p3,p4)
-
 
