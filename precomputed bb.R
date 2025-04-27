@@ -123,17 +123,17 @@ for(zoo in 1:ntrack)
 
 
 #estimate using thinned data to see 
-thin = 10
+thin = 100
 X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
-N = nrow(X)
-X = X[(0:(N%/%thin -1))*thin +1, ]
+n = nrow(X)
+X = X[(0:(n%/%thin -1))*thin +1, ]
 #X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
 
 gradArray = bilinearGradArray(X, covlist)
 
 locs = X
-times = alldat[[1]]$t[(0:(N%/%thin -1))*thin +1]
-ID = alldat[[1]]$ID[(0:(N%/%thin -1))*thin +1]
+times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
+ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
 
 fit <- langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)
 
@@ -143,14 +143,9 @@ fit$gamma2Hat
 
 
 
-
-
-
-
-
 ###### one brownian bridge importance sampling estimate #####
 N = thin-1
-M = 50
+M = 150
 delta = dt*thin
 #find the diffusion constant to be used
 gradArray = bilinearGradArray(X, covlist)
@@ -205,8 +200,6 @@ for (i in 1:(nrow(X)-1)) {
     }
   }
 }
-
-
 
 
 
@@ -422,7 +415,7 @@ stopCluster(cl)
 
 
 #using paralellized and vectorized likelihood in optim
-cl <- makeCluster(detectCores()-1)
+cl <- makeCluster(12)
 clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
 t1 = Sys.time()
 optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")

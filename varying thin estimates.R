@@ -272,7 +272,9 @@ set.seed(123)
 
 
 params = matrix(NA, ncol = 5, nrow = 3*100)
-for (ik in 1:100) {
+
+
+while (ik <= 100) {
   for (jk in 1:3) {
     beta <- c(4,2,-0.1)
     thin = c(10, 50, 100)[jk]
@@ -446,10 +448,12 @@ for (ik in 1:100) {
   }
   
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = params[5])
-  save(df,file="data.Rda")
+  save(df,file="varying_thin_estimates.Rda")
   
 
   print(ik)
+  
+  ik = ik + 1
 }
 
 

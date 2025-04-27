@@ -79,6 +79,7 @@ c2plot
 ###################
 ## Simulate data ##
 ###################
+beta <- c(4,2,-0.1)
 #max time for track
 Tmax <- 5000
 #increment between times
@@ -376,7 +377,7 @@ lik <- function(par, cl) {
 
 ###### one brownian bridge importance sampling estimate #####
 N = thin-1
-M = 100
+M = 50
 delta = dt*thin
 #find the diffusion constant to be used
 gradArray = bilinearGradArray(X, covlist)
@@ -522,24 +523,139 @@ lik <- function(par){
 
 
 t1 = Sys.time()
-lik(c(4,2,-0.1,5))
+lik_RT2(c(4,2,-0.1,5))
 Sys.time() - t1
 
 library(mvnfast)
 library(optimParallel)
 
+
 t1 = Sys.time()
 cl <- makeCluster(detectCores() - 1)
-clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn"))
+clusterExport(cl, c("X", "M", "N", "delta", "bilinearGradVec", "findInterval", "lik_RT2", "gradArray", "dmvn", "rmvn", "covlist"))
 setDefaultCluster(cl=cl)
-o = optimParallel(c(0,0,0,1), lik)
+o = optimParallel(c(0,0,0,1), lik_RT2)
 setDefaultCluster(cl=NULL); stopCluster(cl)
 Sys.time() - t1
 o
 
 
+# Load required packages
+library(parallel)
+library(ggplot2)
+
+# Define the function to evaluate
+func <- function(x) {
+  lik(c(4,2,-0.1,x))
+}
+
+# Create a sequence of x values
+x_vals <- seq(0.1, 10, length.out = 500)
+
+# Set up parallel cluster
+n_cores <- 
+cl <- makeCluster(detectCores()-1)
+
+# Export function to cluster
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn", "func"))
+
+# Evaluate the function in parallel
+y_vals <- parLapply(cl, x_vals, func) %>% unlist()
+
+# Stop the cluster
+stopCluster(cl)
+
+# Create data frame for plotting
+df <- data.frame(x = x_vals, y = y_vals)
+
+# Plot using ggplot2
+ggplot(df, aes(x = x, y = y)) +
+  geom_line(color = "steelblue") +
+  labs(title = "Function Evaluation over Grid",
+       x = "x", y = "func(x)") +
+  theme_minimal()
 
 
+#paralellized version of rons function made using chatgpt
+library(parallel)
+
+lik_RT2 <- function(par, cl) {
+  # Precompute constants
+  sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+  sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+    t(lower.tri(sigma_matrix) * sigma_matrix)
+  sigma_matrix <- par[4] * sigma_matrix
+  sigma <- diag(delta * par[4] / (N + 1), 2, 2)
+  delta_par <- delta * par[4] / (2 * (N + 1))
+  
+  mu_x_all <- rep(X[1:(nrow(X) - 1), 1], each = N) + 
+    1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X) - 1), 1]), each = N) / (N + 1)
+  mu_y_all <- rep(X[1:(nrow(X) - 1), 2], each = N) + 
+    1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X) - 1), 2]), each = N) / (N + 1)
+  
+  clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                "sigma_matrix", "sigma", "delta_par",
+                                "par", "covlist", "bilinearGradVec"), envir = environment())
+  clusterEvalQ(cl, library(mvnfast))
+  
+  loglik_parts <- parLapply(cl, 1:(nrow(X) - 1), function(i) {
+    mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+    mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+    
+    x_samples <- mvnfast::rmvn(M, mu_x, sigma = sigma_matrix)
+    y_samples <- mvnfast::rmvn(M, mu_y, sigma = sigma_matrix)
+    
+    L_k <- 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = sigma_matrix) * 
+                  mvnfast::dmvn(y_samples, mu_y, sigma = sigma_matrix))
+    
+    grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
+    u_0 <- delta_par * 
+      (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
+    
+    full_x <- cbind(X[i, 1], x_samples, X[i + 1, 1])
+    full_y <- cbind(X[i, 2], y_samples, X[i + 1, 2])
+    
+    L_k <- sapply(seq(M), function(j) {
+      grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
+      us <- delta_par * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      
+      diffs <- cbind(full_x[j, 2:(N+2)], full_y[j, 2:(N+2)]) -
+        cbind(full_x[j, 1:(N+1)], full_y[j, 1:(N+1)]) - us
+      
+      prod(mvnfast::dmvn(diffs, mu = c(0, 0), sigma = sigma))
+    }) * L_k
+    
+    return(log(sum(L_k / M)))
+  })
+  
+  return(-sum(unlist(loglik_parts)))
+}
+
+
+N = thin-1
+M = 100
+
+# Create cluster
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "bilinearGradVec", "findInterval", "lik_RT2", "gradArray", "dmvn", "rmvn", "covlist"))
+t1 = Sys.time()
+lik_RT2(c(4,2,-0.1,5), cl)
+Sys.time() - t1
+
+# Optional: stop cluster when you're done
+stopCluster(cl)
+
+
+
+t1 = Sys.time()
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("X", "M", "N", "delta", "bilinearGradVec", "findInterval", "lik_RT2", "gradArray", "dmvn", "rmvn", "covlist"))
+o = optim(c(0,0,0,1), lik_RT2, cl = cl, method = "Nelder-Mead")
+setDefaultCluster(cl=NULL); stopCluster(cl)
+Sys.time() - t1
+o
 
 
 
