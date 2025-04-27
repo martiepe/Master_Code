@@ -267,11 +267,40 @@ for (ik in 1:100) {
     params[ik*4+jk-4, 5] = N
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = params[5])
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
   save(df,file="varying_N_estimates.Rda")
   
   
   print(ik)
 }
+
+
+
+p1 <- ggplot(data = df, aes(x = N, y = beta1)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 4, color = "red", linetype = 2) +
+  labs(title = "Beta_1") +
+  theme_bw()
+
+p2 <- ggplot(data = df, aes(x = N, y = beta2)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 2, color = "red", linetype = 2) +
+  labs(title = "Beta_2") +
+  theme_bw()
+
+p3 <- ggplot(data = df, aes(x = N, y = beta3)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
+  labs(title = "Beta_3") +
+  theme_bw()
+
+p4 <- ggplot(data = df, aes(x = N, y = gammasq)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 5, color = "red", linetype = 2) +
+  labs(title = "gamma^2") +
+  theme_bw()
+
+
+grid.arrange(p1,p2,p3,p4)
 
 
