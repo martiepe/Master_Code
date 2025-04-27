@@ -274,3 +274,44 @@ for (ik in 1:100) {
   print(ik)
 }
 
+
+
+
+p1 <- ggplot(data = df, aes(x = M, y = beta1)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 4, color = "red", linetype = 2) +
+  labs(title = "Beta_1") +
+  theme_bw()
+
+p2 <- ggplot(data = df, aes(x = M, y = beta2)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 2, color = "red", linetype = 2) +
+  labs(title = "Beta_2") +
+  theme_bw()
+
+p3 <- ggplot(data = df, aes(x = M, y = beta3)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
+  labs(title = "Beta_3") +
+  theme_bw()
+
+p4 <- ggplot(data = df, aes(x = M, y = gammasq)) +
+  geom_boxplot() +
+  geom_hline(yintercept  = 5, color = "red", linetype = 2) +
+  labs(title = "gamma^2") +
+  theme_bw()
+
+
+grid.arrange(p1,p2,p3,p4)
+
+
+
+
+
+
+
+
+
+
+
+
