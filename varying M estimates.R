@@ -267,7 +267,7 @@ for (ik in 1:100) {
     params[ik*5+jk-5, 5] = N
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = params[5])
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[,5]))
   save(df,file="varying_M_estimates.Rda")
   
   

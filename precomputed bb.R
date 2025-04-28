@@ -144,13 +144,13 @@ fit$gamma2Hat
 
 
 ###### one brownian bridge importance sampling estimate #####
-N = thin-1
-M = 150
+N = 49
+M = 50
 delta = dt*thin
 #find the diffusion constant to be used
 gradArray = bilinearGradArray(X, covlist)
 locs = X
-gammasq = langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)$gamma2Hat
+gammasq = 5# langevinUD(locs=locs, times=times, ID=ID, grad_array=gradArray)$gamma2Hat
 
 #simulate brownian bridges
 sigma = matrix(nrow = N, ncol = N)
