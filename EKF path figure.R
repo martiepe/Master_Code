@@ -1,4 +1,5 @@
 library(Rhabit)
+View(Rhabit:::nllkEuler)
 library(raster)
 library(ggplot2)
 library(viridis)
@@ -11,6 +12,7 @@ library(parallel)
 library(doParallel)
 library(mvtnorm)
 library(ggplot2)
+library(ambient)
 set.seed(123)
 
 #######################
@@ -21,18 +23,23 @@ lim <- c(-1, 1, -1, 1)*100
 resol <- 1
 ncov <- 2
 covlist <- list()
-#simulate spatial covariates wuing grf with matern covariance function
-for(i in 1:ncov) {
-  covlist[[i]] <- simSpatialCov(lim = lim, nu = 1.3, rho = 50, sigma2 = 0.1, 
-                                resol = resol, raster_like = TRUE)
-}
 
+#perlin covariates
+covlist <- list()
+xgrid <- seq(lim[1], lim[2], by = resol)
+ygrid <- seq(lim[3], lim[4], by = resol)
+coords <- as.matrix(expand.grid(xgrid, ygrid))
+for(i in 1:ncov) {
+  vals = 3*noise_perlin(c(length(xgrid), length(ygrid)), frequency = 0.05)
+  covlist[[i]] = list(x = xgrid, y = ygrid, z = matrix(vals, nrow = length(xgrid)))
+}
 # Include squared distance to centre of map as covariate
 xgrid <- seq(lim[1], lim[2], by=resol)
 ygrid <- seq(lim[3], lim[4], by=resol)
 xygrid <- expand.grid(xgrid,ygrid)
-dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/100
-covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
+covlist[[ncov+1]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+
 
 
 ####################
@@ -99,9 +106,9 @@ hessian <- function(z, covlist, par){
 #scaling parameter diffusion and time
 a = 1000000
 #max time for track
-Tmax <- 0.1
+Tmax <- 0.1*a
 #increment between times
-dt <- 0.01
+dt <- 0.01*a
 #time grid
 time <- seq(0, Tmax, by = dt)
 #number of tracks to be generated
@@ -180,6 +187,97 @@ ggplot() +
                         data = ellipse_df, alpha = 0) +
   labs(x = "x", y = "y", title = "Extended Kalman filter 2D") +
   theme_bw()
+
+
+
+###################
+## Simulate data ##
+###################
+#scaling parameter diffusion and time
+a = 1000000
+#max time for track
+Tmax <- 0.1*a
+#increment between times
+dt <- 0.01*a
+#time grid
+time <- seq(0, Tmax, by = dt)
+#number of tracks to be generated
+ntrack <- 1
+#speed parameter for Langevin model
+speed <- 5/a
+#Time grids
+times = seq(0, Tmax, dt)
+
+
+beta = c(4, 2, -0.1)*a
+
+
+#simulation
+X = simLangevinMM(beta = beta, gamma2 = speed, times = times, loc0 = c(0, 0), cov_list = covlist)
+
+###########
+# 2D path #
+###########
+
+c = qchisq(0.90, df = 2)
+axes_lengths = matrix(nrow = length(times), ncol = 2)
+angle = c()
+path = matrix(nrow = length(times), ncol = 2)
+
+#mesh nodes
+
+delta = dt
+Q = diag(delta*speed,2,2)
+B = diag(delta*speed/2,2,2)
+P = Q
+eig <- eigen(P)
+axes_lengths[1, ] = sqrt(eig$values * c)
+angle = c(angle, atan2(eig$vectors[2,1], eig$vectors[1,1]))
+#predicted state estimate
+x = c(0,0)
+path[1,] = x
+
+
+for (k in 1:(length(times)-1)) {
+  #control vector
+  u = bilinearGrad(x, covlist) %*% beta[1:3]
+  
+  F_k = diag(1,2,2) + (delta*speed/2)*hessian(x, covlist, beta) 
+  
+  #predicted state estimate
+  x = x + B %*% u
+  path[k+1,] = x
+  #predicted estimate covariance 
+  P = F_k %*% P %*% t(F_k) + Q
+  eig <- eigen(P)
+  axes_lengths[k+1, ] = sqrt(eig$values * c)
+  angle = c(angle, atan2(eig$vectors[2,1], eig$vectors[1,1]))  
+  #innovation covariance
+  S = P 
+  
+  
+}
+
+
+# Build a data frame with ellipse parameters
+ellipse_df <- data.frame(
+  x = path[,1],
+  y = path[,2],
+  a = axes_lengths[,1],
+  b = axes_lengths[,2],
+  angle = angle,
+  group = 1:(length(time))
+)
+
+
+ggplot() +
+  geom_path(aes(X[,1], X[,2]), color = "red") +
+  geom_path(aes(path[,1], path[,2]), color = "black") +
+  ggforce::geom_ellipse(aes(x0 = x, y0 = y, a = a, b = b, angle = angle),
+                        data = ellipse_df, alpha = 0) +
+  labs(x = "x", y = "y", title = "Extended Kalman filter 2D") +
+  theme_bw()
+
 
 
 ###########
