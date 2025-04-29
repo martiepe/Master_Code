@@ -19,7 +19,7 @@ library(optimParallel)
 
 
 #perlin covariates
-lim <- c(-1, 1, -1, 1)*100
+lim <- c(-1, 1, -1, 1)*150
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -98,33 +98,33 @@ params = matrix(NA, ncol = 5, nrow = 3*100)
 
 ik = 1
 while (ik <= 100) {
+  beta <- c(4,2,-0.1)
+  dt = 0.01
+  delta = dt*thin
+  N = thin-1
+  M = 50
+  n_obs = 5000
+  Tmax = n_obs*thin*dt
+    
+    
+    
+  time <- seq(0, Tmax, by = dt)
+  alltimes <- list()
+  for(i in 1:ntrack)
+    alltimes[[i]] <- time
+    
+  # Generate tracks 
+  alldat <- lapply(alltimes, function(times) {
+    simLangevinMM(beta = beta, gamma2 = speed, times = times,
+                  loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
+  })
+    
+  # Add ID column
+  for(zoo in 1:ntrack)
+    alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
+    
   for (jk in 1:3) {
-    beta <- c(4,2,-0.1)
     thin = c(10, 50, 100)[jk]
-    dt = 0.01
-    delta = dt*thin
-    N = thin-1
-    M = 50
-    n_obs = 5000
-    Tmax = n_obs*thin*dt
-    
-    
-    
-    time <- seq(0, Tmax, by = dt)
-    alltimes <- list()
-    for(i in 1:ntrack)
-      alltimes[[i]] <- time
-    
-    # Generate tracks 
-    alldat <- lapply(alltimes, function(times) {
-      simLangevinMM(beta = beta, gamma2 = speed, times = times,
-                    loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
-    })
-    
-    # Add ID column
-    for(zoo in 1:ntrack)
-      alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
-    
     
     #thinning tracks
     X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -142,7 +142,7 @@ while (ik <= 100) {
     fit = langevinUD(locs=X, times=times, ID=ID, grad_array=gradArray)
     
     params[ik*3+jk-3, 1:3] = fit$betaHat
-    params[ik*3+jk-3, 3] = fit$gamma2Hat
+    params[ik*3+jk-3, 4] = fit$gamma2Hat
     params[ik*3+jk-3, 5] = thin
   }
   
@@ -152,7 +152,7 @@ while (ik <= 100) {
 }
 
 df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
-save(df,file="varying_thin_estimates.Rda")
+save(df,file="varying_thin_estimates_EM.Rda")
 
 ## plotting estimates ##
 
@@ -182,4 +182,4 @@ p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
 
 
 grid.arrange(p1,p2,p3,p4)
-
+df
