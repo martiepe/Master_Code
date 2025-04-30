@@ -1,19 +1,23 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
-library(mvnfast)
-library(optimParallel)
-
+#library(Rhabit)
+#library(raster)
+#library(ggplot2)
+#library(viridis)
+#library(reshape2)
+#library(gridExtra)
+#library(mvtnorm)
+#library(foreach)
+#library(iterators)
+#library(parallel)
+#library(doParallel)
+#library(mvtnorm)
+#library(ambient)
+#library(mvnfast)
+#library(optimParallel)
+source("functions/utility_functions.R")
+source("functions/Rhabit_functions.R")
+sourceDir("functions") 
+load_lib(ggplot2, viridis, reshape2, gridExtra, mvtnorm, foreach, 
+  iterators, parallel, doParallel, mvtnorm, ambient, mvnfast, optimParallel)
 
 
 
@@ -272,7 +276,7 @@ while (ik <= 100) {
   }
   
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
-  save(df,file="varying_thin_estimates.Rda")
+  save(df,file="varying_thin_estimates_stochastic_likelihood.Rda")
   
   
   print(ik)
