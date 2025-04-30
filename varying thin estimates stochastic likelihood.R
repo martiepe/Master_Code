@@ -264,7 +264,7 @@ while (ik <= 100) {
     }
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(18)
 
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
     
@@ -312,6 +312,6 @@ p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
   theme_bw()
 
 
-grid.arrange(p1,p2,p3,p4)
+sv(grid.arrange(p1,p2,p3,p4))
 
 
