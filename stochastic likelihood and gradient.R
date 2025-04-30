@@ -139,6 +139,14 @@ mu_y_all <- rep(X[1:(nrow(X) - 1), 2], each = N) +
 
 
 
+Z = array(data = NA, c(2, nrow(X)-1, M, N))
+
+for (i in 1:(nrow(X)-1)) {
+  Z[1,i, , ] = mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+  Z[2,i, , ] = mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+  
+}
+
 
 #vectorized and paralellized likelihood and gradient function using numerical differentiation for gamma¨2
 lik_grad <- function(par, cl){
@@ -157,7 +165,7 @@ lik_grad <- function(par, cl){
   #number of simulations
   clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
                                 "chol_matrix", "delta_par",
-                                "par", "covlist", "bilinearGradVec", "delta", "chol_m"), envir = environment())
+                                "par", "covlist", "bilinearGradVec", "delta", "chol_m", "Z"), envir = environment())
   clusterEvalQ(cl, library(mvnfast))
   
   
@@ -169,8 +177,12 @@ lik_grad <- function(par, cl){
     
     
     
-    Z_x <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-    Z_y <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+    Z_x <- Z[1,i, , ]
+    Z_y <- Z[2,i, , ]
+    
+    #Z_x <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+    #Z_y <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+    
     
     x_samples <- sweep(Z_x * gamma, 2, mu_x, `+`)      
     y_samples <- sweep(Z_y * gamma, 2, mu_y, `+`)
@@ -271,6 +283,202 @@ lik_grad <- function(par, cl){
   
 }
 
+#precomputed standard normal distributions
+#vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
+lik_grad <- function(par, cl){
+  #log-likelihood
+  l = 0
+  lik_grad = c(0,0,0,0)
+  
+  sigma <- diag(delta * par[4] / (N + 1), 2, 2)
+  delta_par <- delta * par[4] / (2 * (N + 1))
+  
+  
+  gamma = sqrt(par[4])
+  chol_matrix = gamma*chol_m
+  
+  
+  #number of simulations
+  clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                "chol_matrix", "delta_par",
+                                "par", "covlist", "bilinearGradVec", "delta", "Z"), envir = environment())
+  clusterEvalQ(cl, library(mvnfast))
+  
+  
+  
+  compute <- function(i){
+    mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+    mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+    
+    
+    Z_x <- Z[1,i, , ]
+    Z_y <- Z[2,i, , ]
+    
+    #Z_x <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+    #Z_y <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+    
+    
+    x_samples <- sweep(Z_x * gamma, 2, mu_x, `+`)      
+    y_samples <- sweep(Z_y * gamma, 2, mu_y, `+`)
+    
+    
+    L_k = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = chol_matrix, isChol = TRUE) * 
+                 mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
+    
+    
+    grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
+    
+    u_0 <- (delta*par[4]/((N+1)*2)) * 
+      (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
+    
+    full_x <- cbind(X[i,1], x_samples, X[i+1,1])
+    full_y <- cbind(X[i,2], y_samples, X[i+1,2])
+    
+    
+    #grads is used in both of these
+    # likelihood of all locations
+    L_k <- sapply(seq(M), function(j) {
+      grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                   cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
+                matrix(c(0,0)),
+                diag(delta*par[4]/(N+1), 2, 2)))
+    }) * L_k
+    
+    
+    lik_grad_k <- sapply(seq(M), function(j){
+      grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      
+      g = cbind(grad_0[,1,],array(aperm(grads, c(1, 3, 2)), dim = c(3, 2 * N)))
+      
+      D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                      cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
+      
+      rbind(g%*%D, -(N+1)/par[4] + (N+1)/(2*delta*par[4]^2)*t(D)%*%D + (1/(2*par[4]))* t(t(g)%*%par[1:3]) %*% D)
+      
+    })
+    
+    return(c(log(sum(L_k/M)), -sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[4, ]*L_k)/(sum(L_k))))
+  }
+  
+  results <- parLapply(cl, 1:(nrow(X)-1), compute)
+  
+  l = sum(unlist(results)[(1:(nrow(X)-1))*5 -4])
+  lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
+  lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
+  lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
+  lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
+  
+  
+  return(list(l = -l, g = lik_grad))
+  
+}
+
+
+
+#vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
+lik_grad <- function(par, cl){
+  #log-likelihood
+  l = 0
+  lik_grad = c(0,0,0,0)
+  
+  sigma <- diag(delta * par[4] / (N + 1), 2, 2)
+  delta_par <- delta * par[4] / (2 * (N + 1))
+  
+  
+  gamma = sqrt(par[4])
+  chol_matrix = gamma*chol_m
+  
+  
+  #number of simulations
+  clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                "chol_matrix", "delta_par",
+                                "par", "covlist", "bilinearGradVec", "delta"), envir = environment())
+  clusterEvalQ(cl, library(mvnfast))
+  
+  
+  
+  compute <- function(i){
+    mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+    mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+    
+    
+    # Add endpoints to all samples (M x (N+2) matrices)
+    # calc initial gradient
+    
+    
+    x_samples <- mvnfast::rmvn(M, mu_x, sigma = chol_matrix, isChol = TRUE)
+    y_samples <- mvnfast::rmvn(M, mu_y, sigma = chol_matrix, isChol = TRUE)
+    
+    
+    L_k = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = chol_matrix, isChol = TRUE) * 
+                 mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
+    
+    #x_samples <- mvnfast::rmvn(M, mu_x, sigma = sigma_matrix)
+    #y_samples <- mvnfast::rmvn(M, mu_y, sigma = sigma_matrix)
+    
+    #L_k <- 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = sigma_matrix) * 
+    #            mvnfast::dmvn(y_samples, mu_y, sigma = sigma_matrix))
+    
+    grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
+    
+    u_0 <- (delta*par[4]/((N+1)*2)) * 
+      (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
+    
+    full_x <- cbind(X[i,1], x_samples, X[i+1,1])
+    full_y <- cbind(X[i,2], y_samples, X[i+1,2])
+    
+    
+    #grads is used in both of these
+    # likelihood of all locations
+    L_k <- sapply(seq(M), function(j) {
+      grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                   cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
+                matrix(c(0,0)),
+                diag(delta*par[4]/(N+1), 2, 2)))
+    }) * L_k
+    
+    
+    lik_grad_k <- sapply(seq(M), function(j){
+      grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
+      us <- (delta*par[4]/((N+1)*2)) * 
+        (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
+      us <- rbind(u_0, us)
+      
+      g = cbind(grad_0[,1,],array(aperm(grads, c(1, 3, 2)), dim = c(3, 2 * N)))
+      
+      D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
+                      cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
+      
+      rbind(g%*%D, -(N+1)/par[4] + (N+1)/(2*delta*par[4]^2)*t(D)%*%D + (1/(2*par[4]))* t(t(g)%*%par[1:3]) %*% D)
+      
+    })
+    
+    return(c(log(sum(L_k/M)), -sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[4, ]*L_k)/(sum(L_k))))
+  }
+  
+  results <- parLapply(cl, 1:(nrow(X)-1), compute)
+  
+  l = sum(unlist(results)[(1:(nrow(X)-1))*5 -4])
+  lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
+  lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
+  lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
+  lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
+  
+  
+  return(list(l = -l, g = lik_grad))
+  
+}
 
 
 # test speed of paralellized and vectorized likelihood and score
@@ -281,17 +489,15 @@ Sys.time() - t1
 stopCluster(cl)
 
 
-M = 50
-N = 49
+
 
 #using paralellized and vectorized likelihood in optim
-cl <- makeCluster(12)
+cl <- makeCluster(detectCores()-1)
 #clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
 t1 = Sys.time()
 optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
 Sys.time() - t1
 stopCluster(cl)
-
 
 
 
