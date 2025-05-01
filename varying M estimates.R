@@ -99,12 +99,12 @@ for (ik in 1:100) {
   for (jk in 1:5) {
     beta <- c(4,2,-0.1)
     thin = 100
+    dt = 0.01
     delta = dt*thin
     N = 49
     M = c(5, 10, 50, 100, 200)[jk]
     n_obs = 5000
-    dt = 0.01
-    Tmax = n_obs*thin*dt
+        Tmax = n_obs*thin*dt
     
     
     
@@ -264,17 +264,15 @@ for (ik in 1:100) {
     
     print(o$par)
     params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = N
+    params[ik*5+jk-5, 5] = M
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = params[5])
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[, 5]))
   save(df,file="varying_M_estimates.Rda")
   
   
   print(ik)
 }
-
-
 
 
 p1 <- ggplot(data = df, aes(x = M, y = beta1)) +

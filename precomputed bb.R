@@ -162,8 +162,6 @@ for (k in 1:N) {
 }
 
 
-
-
 ##### Constructing Brownian bridges ############
 mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
 mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
@@ -431,7 +429,7 @@ stopCluster(cl)
 
 
 
-
+ 
 
 
 

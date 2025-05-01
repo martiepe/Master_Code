@@ -101,11 +101,11 @@ while (ik <= 100) {
   for (jk in 1:3) {
     beta <- c(4,2,-0.1)
     thin = c(10, 50, 100)[jk]
+    dt = 0.01
     delta = dt*thin
     N = thin-1
     M = 50
     n_obs = 5000
-    dt = 0.01
     Tmax = n_obs*thin*dt
     
     

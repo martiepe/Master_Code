@@ -550,17 +550,17 @@ func <- function(x) {
 }
 
 # Create a sequence of x values
-x_vals <- seq(0.1, 10, length.out = 500)
+x_vals <- seq(1, 5.5, length.out = 100)
 
 # Set up parallel cluster
-n_cores <- 
 cl <- makeCluster(detectCores()-1)
 
 # Export function to cluster
-clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn", "func"))
+clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn", "func", "lik"))
 
 # Evaluate the function in parallel
-y_vals <- parLapply(cl, x_vals, func) %>% unlist()
+y_vals <- unlist(parLapply(cl, x_vals, func))
+
 
 # Stop the cluster
 stopCluster(cl)
@@ -571,8 +571,8 @@ df <- data.frame(x = x_vals, y = y_vals)
 # Plot using ggplot2
 ggplot(df, aes(x = x, y = y)) +
   geom_line(color = "steelblue") +
-  labs(title = "Function Evaluation over Grid",
-       x = "x", y = "func(x)") +
+  labs(title = "",
+       x = "gammasq", y = "lik") +
   theme_minimal()
 
 
@@ -643,8 +643,6 @@ clusterExport(cl, c("X", "M", "N", "delta", "bilinearGradVec", "findInterval", "
 t1 = Sys.time()
 lik_RT2(c(4,2,-0.1,5), cl)
 Sys.time() - t1
-
-# Optional: stop cluster when you're done
 stopCluster(cl)
 
 
@@ -653,7 +651,7 @@ t1 = Sys.time()
 cl <- makeCluster(detectCores() - 1)
 clusterExport(cl, c("X", "M", "N", "delta", "bilinearGradVec", "findInterval", "lik_RT2", "gradArray", "dmvn", "rmvn", "covlist"))
 o = optim(c(0,0,0,1), lik_RT2, cl = cl, method = "Nelder-Mead")
-setDefaultCluster(cl=NULL); stopCluster(cl)
+stopCluster(cl)
 Sys.time() - t1
 o
 
