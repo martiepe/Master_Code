@@ -576,6 +576,9 @@ ggplot(df, aes(x = x, y = y)) +
   theme_minimal()
 
 
+
+
+
 #paralellized version of rons function made using chatgpt
 library(parallel)
 
@@ -633,7 +636,7 @@ lik_RT2 <- function(par, cl) {
   return(-sum(unlist(loglik_parts)))
 }
 
-
+lik_RT2()
 N = thin-1
 M = 100
 

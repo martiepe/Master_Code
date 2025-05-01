@@ -1,22 +1,22 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
-library(mvnfast)
-library(optimParallel)
-
-
-
-
+# library(Rhabit)
+# library(raster)
+source("functions/utility_functions.R")
+sourceDir("functions") 
+load_lib(ggplot2, viridis, reshape2, gridExtra, mvtnorm, foreach, 
+  iterators, parallel, doParallel, mvtnorm, ambient, mvnfast, optimParallel)
+# library(ggplot2)
+# library(viridis)
+# library(reshape2)
+# library(gridExtra)
+# library(mvtnorm)
+# library(foreach)
+# library(iterators)
+# library(parallel)
+# library(doParallel)
+# library(mvtnorm)
+# library(ambient)
+# library(mvnfast)
+# library(optimParallel)
 
 #perlin covariates
 lim <- c(-1, 1, -1, 1)*100
@@ -104,7 +104,12 @@ for (ik in 1:100) {
     N = 49
     M = c(5, 10, 50, 100, 200)[jk]
     n_obs = 5000
+<<<<<<< HEAD:varying M estimates.R
         Tmax = n_obs*thin*dt
+=======
+    
+    Tmax = n_obs*thin*dt
+>>>>>>> 8b7d4ab08aa444d7b2272a4dd74684af15b986cb:precomputed Brownian bridges likelihood/varying M estimates.R
     
     
     
@@ -255,8 +260,9 @@ for (ik in 1:100) {
     }
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(10)
-    clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
+    cl <- makeCluster(16)
+    clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad", 
+      "bilinearGradVec"))
     
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
     
@@ -267,7 +273,11 @@ for (ik in 1:100) {
     params[ik*5+jk-5, 5] = M
   }
   
+<<<<<<< HEAD:varying M estimates.R
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[, 5]))
+=======
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[,5]))
+>>>>>>> 8b7d4ab08aa444d7b2272a4dd74684af15b986cb:precomputed Brownian bridges likelihood/varying M estimates.R
   save(df,file="varying_M_estimates.Rda")
   
   
@@ -299,12 +309,7 @@ p4 <- ggplot(data = df, aes(x = M, y = gammasq)) +
   labs(title = "gamma^2") +
   theme_bw()
 
-
 grid.arrange(p1,p2,p3,p4)
-
-
-
-
 
 
 
