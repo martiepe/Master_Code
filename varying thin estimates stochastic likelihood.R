@@ -100,7 +100,7 @@ set.seed(123)
 
 params = matrix(NA, ncol = 5, nrow = 3*100)
 
-ik = 1
+ik = 15
 while (ik <= 100) {
   beta <- c(4,2,-0.1)
   M = 50
@@ -266,7 +266,7 @@ while (ik <= 100) {
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(18)
 
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
+    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0))
     
     stopCluster(cl)
     
