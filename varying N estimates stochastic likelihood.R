@@ -94,17 +94,17 @@ set.seed(123)
 
 
 
-params = matrix(NA, ncol = 5, nrow = 5*100)
+params = matrix(NA, ncol = 5, nrow = 4*100)
 for (ik in 1:100) {
-  for (jk in 1:5) {
+  for (jk in 1:4) {
     beta <- c(4,2,-0.1)
     thin = 100
     dt = 0.01
     delta = dt*thin
-    N = 49
-    M = c(5, 10, 50, 100, 200)[jk]
+    N = c(4,9,49,99)[jk]
+    M = 50
     n_obs = 5000
-        Tmax = n_obs*thin*dt
+    Tmax = n_obs*thin*dt
     
     
     
@@ -119,10 +119,6 @@ for (ik in 1:100) {
                     loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
     })
     
-    # Add ID column
-    for(zoo in 1:ntrack)
-      alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
-    
     
     #thinning tracks
     X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
@@ -130,89 +126,67 @@ for (ik in 1:100) {
     X = X[(0:(n%/%thin -1))*thin +1, ]
     
     
-    gradArray = bilinearGradArray(X, covlist)
-    
-    times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
-    ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
-    
-    gradArray = bilinearGradArray(X, covlist)
-    gammasq = langevinUD(locs=X, times=times, ID=ID, grad_array=gradArray)$gamma2Hat
+    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+      t(lower.tri(sigma_matrix) * sigma_matrix)
+    chol_m = (chol(sigma_matrix))
     
     
-    
-    #simulate brownian bridges
-    sigma = matrix(nrow = N, ncol = N)
-    for (k in 1:N) {
-      for (m in 1:k) {
-        sigma[k,m] = gammasq*delta*(1 - k/(N+1))*(m/(N+1))
-        sigma[m,k] = gammasq*delta*(1 - k/(N+1))*(m/(N+1))
-      }
-    }
+    mu_x_all <- rep(X[1:(nrow(X) - 1), 1], each = N) + 
+      1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X) - 1), 1]), each = N) / (N + 1)
+    mu_y_all <- rep(X[1:(nrow(X) - 1), 2], each = N) + 
+      1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X) - 1), 2]), each = N) / (N + 1)
     
     
-    ##### Constructing Brownian bridges ############
-    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
-    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
-    
-    B <- array(data = NA, c(2, nrow(X)-1, M, N))
-    #importance sampling wights
-    P <- array(data = NA, c(nrow(X)-1, M))
-    for (i in 1:(nrow(X)-1)) {
-      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
-      
-      # Generate all M sample tracks at once
-      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, mu_x, sigma = sigma)
-      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, mu_y, sigma = sigma)
-      
-      
-      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], mu_x, sigma = sigma) * 
-                       mvnfast::dmvn(B[2, i, 1:M, 1:N], mu_y, sigma = sigma))
-    }
-    
-    
-    
-    #find the gradient at the bridge nodes
-    Grad <- array(data = NA, c(ncov +1,nrow(X)-1, M, N, 2))
-    for (i in 1:(nrow(X)-1)) {
-      for(j in 1:M){
-        #grad = bilinearGradArray(t(B[1:2, i, j, 1:N]), covlist)
-        
-        grads <- bilinearGradVec(cbind(B[1, i, j, ], B[2, i, j, ]), covlist)
-        
-        for (k in 1:(ncov+1)) {
-          Grad[k, i, j, 1:N, 1] = grads[k , ,1]
-          Grad[k, i, j, 1:N, 2] = grads[k , ,2]
-        }
-      }
-    }
-    
-    
-    #vectorized and paralellized likelihood and gradient function
+    #vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
     lik_grad <- function(par, cl){
       #log-likelihood
       l = 0
       lik_grad = c(0,0,0,0)
+      
+      sigma <- diag(delta * par[4] / (N + 1), 2, 2)
+      delta_par <- delta * par[4] / (2 * (N + 1))
+      
+      
+      gamma = sqrt(par[4])
+      chol_matrix = gamma*chol_m
+      
+      
       #number of simulations
+      clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                    "chol_matrix", "delta_par",
+                                    "par", "covlist", "bilinearGradVec", "delta"), envir = environment())
+      clusterEvalQ(cl, library(mvnfast))
+      
+      
       
       compute <- function(i){
-        L_k = 1
-        lik_grad_k = 0
-        # Add endpoints to all samples (M x (N+2) matrices)
-        # calc initial gradient
-        x_samples = B[1, i, , ]
-        y_samples = B[2, i, , ]
+        mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+        mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
         
-        grad_0 <- array(data = t(gradArray[i, , ]), c(3,1,2))
+        
+        x_samples <- mvnfast::rmvn(M, mu_x, sigma = chol_matrix, isChol = TRUE)
+        y_samples <- mvnfast::rmvn(M, mu_y, sigma = chol_matrix, isChol = TRUE)
+        
+        
+        L_k = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = chol_matrix, isChol = TRUE) * 
+                     mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
+        
+        
+        
+        grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
         
         u_0 <- (delta*par[4]/((N+1)*2)) * 
           (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
         
         full_x <- cbind(X[i,1], x_samples, X[i+1,1])
         full_y <- cbind(X[i,2], y_samples, X[i+1,2])
+        
+        
+        #grads is used in both of these
         # likelihood of all locations
         L_k <- sapply(seq(M), function(j) {
-          grads <- Grad[ , i, j, , ]
+          grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
           us <- (delta*par[4]/((N+1)*2)) * 
             (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
           us <- rbind(u_0, us)
@@ -220,16 +194,16 @@ for (ik in 1:100) {
                        cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                     matrix(c(0,0)),
                     diag(delta*par[4]/(N+1), 2, 2)))
-        })*P[i, ]
+        }) * L_k
         
         
         lik_grad_k <- sapply(seq(M), function(j){
-          grads <- Grad[ , i, j, , ]
+          grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
           us <- (delta*par[4]/((N+1)*2)) * 
             (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
           us <- rbind(u_0, us)
           
-          g = cbind(grad_0[,1,],array(aperm(Grad[ , i, j, , ], c(1, 3, 2)), dim = c(3, 2 * N)))
+          g = cbind(grad_0[,1,],array(aperm(grads, c(1, 3, 2)), dim = c(3, 2 * N)))
           
           D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                           cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
@@ -255,45 +229,47 @@ for (ik in 1:100) {
     }
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(10)
-    clusterExport(cl, c("X", "M", "N", "delta", "P", "B", "Grad", "gradArray", "dmvn",  "lik_grad"))
+    cl <- makeCluster(12)
     
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
+    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0))
     
     stopCluster(cl)
     
+    
+    
     print(o$par)
-    params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = M
+    params[ik*4+jk-4, 1:4] = o$par
+    params[ik*4+jk-4, 5] = N
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[, 5]))
-  save(df,file="varying_M_estimates.Rda")
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
+  save(df,file="varying_N_estimates_stochastic_likelihood.Rda")
   
   
   print(ik)
 }
 
 
-p1 <- ggplot(data = df, aes(x = M, y = beta1)) +
+
+p1 <- ggplot(data = df, aes(x = N, y = beta1)) +
   geom_boxplot() +
   geom_hline(yintercept  = 4, color = "red", linetype = 2) +
   labs(title = "Beta_1") +
   theme_bw()
 
-p2 <- ggplot(data = df, aes(x = M, y = beta2)) +
+p2 <- ggplot(data = df, aes(x = N, y = beta2)) +
   geom_boxplot() +
   geom_hline(yintercept  = 2, color = "red", linetype = 2) +
   labs(title = "Beta_2") +
   theme_bw()
 
-p3 <- ggplot(data = df, aes(x = M, y = beta3)) +
+p3 <- ggplot(data = df, aes(x = N, y = beta3)) +
   geom_boxplot() +
   geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
   labs(title = "Beta_3") +
   theme_bw()
 
-p4 <- ggplot(data = df, aes(x = M, y = gammasq)) +
+p4 <- ggplot(data = df, aes(x = N, y = gammasq)) +
   geom_boxplot() +
   geom_hline(yintercept  = 5, color = "red", linetype = 2) +
   labs(title = "gamma^2") +
@@ -301,15 +277,4 @@ p4 <- ggplot(data = df, aes(x = M, y = gammasq)) +
 
 
 grid.arrange(p1,p2,p3,p4)
-
-
-
-
-
-
-
-
-
-
-
 

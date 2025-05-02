@@ -99,11 +99,11 @@ for (ik in 1:100) {
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
     thin = 100
+    dt = 0.01
     delta = dt*thin
     N = c(4,9,49,99)[jk]
     M = 50
     n_obs = 5000
-    dt = 0.01
     Tmax = n_obs*thin*dt
     
     
