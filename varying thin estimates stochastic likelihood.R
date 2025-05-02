@@ -267,12 +267,12 @@ while (ik <= 100) {
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(18)
 
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0))
+    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
     
     stopCluster(cl)
     
     print(c(o$par[1:3], exp(o$par[4])))
-    params[ik*3+jk-3, 1:3] = o$par
+    params[ik*3+jk-3, 1:3] = o$par[1:3]
     params[ik*3+jk-3, 4] = exp(o$par[4])
     params[ik*3+jk-3, 5] = thin
   }
