@@ -271,8 +271,9 @@ while (ik <= 100) {
     
     stopCluster(cl)
     
-    print(o$par)
-    params[ik*3+jk-3, 1:4] = o$par
+    print(c(o$par[1:3], exp(o$par[4])))
+    params[ik*3+jk-3, 1:3] = o$par
+    params[ik*3+jk-3, 4] = exp(o$par[4])
     params[ik*3+jk-3, 5] = thin
   }
   
