@@ -1,19 +1,23 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
-library(mvnfast)
-library(optimParallel)
-
+#library(Rhabit)
+#library(raster)
+#library(ggplot2)
+#library(viridis)
+#library(reshape2)
+#library(gridExtra)
+#library(mvtnorm)
+#library(foreach)
+#library(iterators)
+#library(parallel)
+#library(doParallel)
+#library(mvtnorm)
+#library(ambient)
+#library(mvnfast)
+#library(optimParallel)
+source("functions/utility_functions.R")
+source("functions/Rhabit_functions.R")
+sourceDir("functions") 
+load_lib(ggplot2, viridis, reshape2, gridExtra, mvtnorm, foreach, 
+  iterators, parallel, doParallel, mvtnorm, ambient, mvnfast, optimParallel)
 
 
 
@@ -163,15 +167,16 @@ while (ik <= 100) {
     
     #vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
     lik_grad <- function(par, cl){
+      gammasq = exp(par[4])
       #log-likelihood
       l = 0
       lik_grad = c(0,0,0,0)
       
-      sigma <- diag(delta * par[4] / (N + 1), 2, 2)
-      delta_par <- delta * par[4] / (2 * (N + 1))
+      sigma <- diag(delta * gammasq / (N + 1), 2, 2)
+      delta_par <- delta * gammasq / (2 * (N + 1))
       
       
-      gamma = sqrt(par[4])
+      gamma = sqrt(gammasq)
       chol_matrix = gamma*chol_m
       
       
@@ -207,7 +212,7 @@ while (ik <= 100) {
         
         grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
         
-        u_0 <- (delta*par[4]/((N+1)*2)) * 
+        u_0 <- (delta*gammasq/((N+1)*2)) * 
           (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
         
         full_x <- cbind(X[i,1], x_samples, X[i+1,1])
@@ -218,19 +223,19 @@ while (ik <= 100) {
         # likelihood of all locations
         L_k <- sapply(seq(M), function(j) {
           grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
-          us <- (delta*par[4]/((N+1)*2)) * 
+          us <- (delta*gammasq/((N+1)*2)) * 
             (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
           us <- rbind(u_0, us)
           prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                        cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
                     matrix(c(0,0)),
-                    diag(delta*par[4]/(N+1), 2, 2)))
+                    diag(delta*gammasq/(N+1), 2, 2)))
         }) * L_k
         
         
         lik_grad_k <- sapply(seq(M), function(j){
           grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
-          us <- (delta*par[4]/((N+1)*2)) * 
+          us <- (delta*gammasq/((N+1)*2)) * 
             (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
           us <- rbind(u_0, us)
           
@@ -239,7 +244,7 @@ while (ik <= 100) {
           D = matrix(t((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
                           cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us), ncol = 1)
           
-          rbind(g%*%D, -(N+1)/par[4] + (N+1)/(2*delta*par[4]^2)*t(D)%*%D + (1/(2*par[4]))* t(t(g)%*%par[1:3]) %*% D)
+          rbind(g%*%D, -(N+1)/gammasq + (N+1)/(2*delta*gammasq^2)*t(D)%*%D + (1/(2*gammasq))* t(t(g)%*%par[1:3]) %*% D)
           
         })
         
@@ -252,7 +257,7 @@ while (ik <= 100) {
       lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
       lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
       lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
-      lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
+      lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])*gammasq
       
       
       return(list(l = -l, g = lik_grad))
@@ -260,19 +265,20 @@ while (ik <= 100) {
     }
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(18)
 
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
+    o = optim(par = c(0,0,0,0), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B")
     
     stopCluster(cl)
     
-    print(o$par)
-    params[ik*3+jk-3, 1:4] = o$par
+    print(c(o$par[1:3], exp(o$par[4])))
+    params[ik*3+jk-3, 1:3] = o$par[1:3]
+    params[ik*3+jk-3, 4] = exp(o$par[4])
     params[ik*3+jk-3, 5] = thin
   }
   
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
-  save(df,file="varying_thin_estimates.Rda")
+  save(df,file="varying_thin_estimates_stochastic_likelihood.Rda")
   
   
   print(ik)
@@ -308,6 +314,6 @@ p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
   theme_bw()
 
 
-grid.arrange(p1,p2,p3,p4)
+sv(grid.arrange(p1,p2,p3,p4))
 
 
