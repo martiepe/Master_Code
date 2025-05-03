@@ -16,8 +16,8 @@
 source("functions/utility_functions.R")
 source("functions/Rhabit_functions.R")
 sourceDir("functions") 
-load_lib(ggplot2, viridis, reshape2, gridExtra, mvtnorm, foreach, 
-  iterators, parallel, doParallel, mvtnorm, ambient, mvnfast, optimParallel)
+load_lib(ggplot2, viridis, reshape2, gridExtra, foreach, 
+  iterators, parallel, doParallel,  ambient, mvnfast, optimParallel)
 
 
 
@@ -298,7 +298,7 @@ while (ik <= 100) {
       
       
       if(is.infinite(l)){
-        return(list(l = -Inf, g = c(0,0,0,0)))
+        return(list(l = 1e10, g = c(0,0,0,0)))
         }else{
         return(list(l = -l, g = lik_grad))
       }
