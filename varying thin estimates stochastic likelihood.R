@@ -96,8 +96,6 @@ speed <- 5
 
 set.seed(123)
 
-
-
 params = matrix(NA, ncol = 5, nrow = 3*100)
 
 ik = 1
@@ -299,12 +297,9 @@ while (ik <= 100) {
       lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])/0.001
       
       
-      
-      
-      
       if(is.infinite(l)){
-        return(lik_grad(par, cl))
-      }else{
+        return(list(l = -Inf, g = c(0,0,0,0)))
+        }else{
         return(list(l = -l, g = lik_grad))
       }
       
@@ -313,7 +308,7 @@ while (ik <= 100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(detectCores()-1)
+    cl <- makeCluster(20)
     
     clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
                                    "covlist", "bilinearGradVec", "delta", "chol_m", "Z", "rmvn", "dmvn"), envir = environment())
