@@ -9,10 +9,8 @@ library(foreach)
 library(iterators)
 library(parallel)
 library(doParallel)
-library(mvtnorm)
 library(ambient)
 library(mvnfast)
-library(optimParallel)
 
 
 
@@ -82,68 +80,66 @@ bilinearGradVec <- function(loc_mat, cov_list) {
 }
 
 
+sim_langevin <- function(beta, gammasq, dt, Tmax, loc_0, covlist){
+  sigma = sqrt(gammasq*dt)
+  n_obs = Tmax/dt
+  locs = rbind(matrix(loc_0, nrow=1), mvnfast::rmvn(n_obs-1, c(0,0), sigma = diag(sigma, 2,2), isChol = TRUE)) 
+  for (i in 1:(n_obs-1)) {
+    locs[i+1, ] = locs[i+1, ] + locs[i, ] + (gammasq*dt/2)*bilinearGrad(locs[i, ], covlist)%*%beta 
+  }
+  
+  return(locs)
+}
 
-#number of tracks to be generated
-ntrack <- 1
+
+
 #speed parameter for Langevin model
 speed <- 5
-
-
-
 set.seed(123)
 
-
-
-params = matrix(NA, ncol = 5, nrow = 3*100)
+params = matrix(NA, ncol = 5, nrow = 5*100)
 
 ik = 1
 while (ik <= 100) {
   beta <- c(4,2,-0.1)
   dt = 0.01
-  delta = dt*thin
-  N = thin-1
-  M = 50
   n_obs = 5000
-  Tmax = n_obs*thin*dt
-    
-    
+  Tmax = n_obs*100*dt
     
   time <- seq(0, Tmax, by = dt)
-  alltimes <- list()
-  for(i in 1:ntrack)
-    alltimes[[i]] <- time
-    
+
   # Generate tracks 
-  alldat <- lapply(alltimes, function(times) {
-    simLangevinMM(beta = beta, gamma2 = speed, times = times,
-                  loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
-  })
+  track = sim_langevin(beta, speed, dt, Tmax, c(0,0), covlist)
     
-  # Add ID column
-  for(zoo in 1:ntrack)
-    alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
+  
+  for (jk in 1:5) {
+    thin = c(1, 5, 10, 50, 100)[jk]
+    delta = dt*thin
     
-  for (jk in 1:3) {
-    thin = c(10, 50, 100)[jk]
     
     #thinning tracks
-    X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
+    X = track
     n = nrow(X)
     X = X[(0:(n%/%thin -1))*thin +1, ]
+    times = time[(0:(n%/%thin -1))*thin +1]
+
+    
+    #shotening tracks to 5000 observations
+    X = X[1:5000, ]
+    times = times[1:5000]
+    ID = rep(1, 5000)
+    
+    #computing gradient of track observations
+    gradArray = bilinearGradVec(X, covlist)
+    gradArray <- aperm(gradArray, perm = c(2, 3, 1))
     
     
-    gradArray = bilinearGradArray(X, covlist)
-    
-    locs = X
-    times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
-    ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
-    
-    gradArray = bilinearGradArray(X, covlist)
     fit = langevinUD(locs=X, times=times, ID=ID, grad_array=gradArray)
     
-    params[ik*3+jk-3, 1:3] = fit$betaHat
-    params[ik*3+jk-3, 4] = fit$gamma2Hat
-    params[ik*3+jk-3, 5] = thin
+    params[ik*5+jk-5, 1:3] = fit$betaHat
+    params[ik*5+jk-5, 4] = fit$gamma2Hat
+    params[ik*5+jk-5, 5] = thin
+    print(c(fit$betaHat, fit$gamma2Hat))
   }
   
   print(ik)
@@ -151,30 +147,32 @@ while (ik <= 100) {
   ik = ik + 1
 }
 
-df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
+
+
+
+df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(dt*params[,5]))
 save(df,file="varying_thin_estimates_EM.Rda")
 
 ## plotting estimates ##
-
-p1 <- ggplot(data = df, aes(x = thin, y = beta1)) +
+p1 <- ggplot(data = df, aes(x = dt, y = beta1)) +
   geom_boxplot() +
   geom_hline(yintercept  = 4, color = "red", linetype = 2) +
   labs(title = "Beta_1") +
   theme_bw()
 
-p2 <- ggplot(data = df, aes(x = thin, y = beta2)) +
+p2 <- ggplot(data = df, aes(x = dt, y = beta2)) +
   geom_boxplot() +
   geom_hline(yintercept  = 2, color = "red", linetype = 2) +
   labs(title = "Beta_2") +
   theme_bw()
 
-p3 <- ggplot(data = df, aes(x = thin, y = beta3)) +
+p3 <- ggplot(data = df, aes(x = dt, y = beta3)) +
   geom_boxplot() +
   geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
   labs(title = "Beta_3") +
   theme_bw()
 
-p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
+p4 <- ggplot(data = df, aes(x = dt, y = gammasq)) +
   geom_boxplot() +
   geom_hline(yintercept  = 5, color = "red", linetype = 2) +
   labs(title = "gamma^2") +
@@ -182,4 +180,4 @@ p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
 
 
 grid.arrange(p1,p2,p3,p4)
-df
+

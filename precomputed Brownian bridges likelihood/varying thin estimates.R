@@ -270,7 +270,7 @@ while (ik <= 100) {
     params[ik*3+jk-3, 5] = thin
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(dt*params[,5]))
   save(df,file="varying_thin_estimates.Rda")
   
 
@@ -280,27 +280,27 @@ while (ik <= 100) {
 }
 
 
-## plotting estimates ##
 
-p1 <- ggplot(data = df, aes(x = thin, y = beta1)) +
+## plotting estimates ##
+p1 <- ggplot(data = df, aes(x = dt, y = beta1)) +
   geom_boxplot() +
   geom_hline(yintercept  = 4, color = "red", linetype = 2) +
   labs(title = "Beta_1") +
   theme_bw()
 
-p2 <- ggplot(data = df, aes(x = thin, y = beta2)) +
+p2 <- ggplot(data = df, aes(x = dt, y = beta2)) +
   geom_boxplot() +
   geom_hline(yintercept  = 2, color = "red", linetype = 2) +
   labs(title = "Beta_2") +
   theme_bw()
 
-p3 <- ggplot(data = df, aes(x = thin, y = beta3)) +
+p3 <- ggplot(data = df, aes(x = dt, y = beta3)) +
   geom_boxplot() +
   geom_hline(yintercept  = -0.1, color = "red", linetype = 2) +
   labs(title = "Beta_3") +
   theme_bw()
 
-p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
+p4 <- ggplot(data = df, aes(x = dt, y = gammasq)) +
   geom_boxplot() +
   geom_hline(yintercept  = 5, color = "red", linetype = 2) +
   labs(title = "gamma^2") +
