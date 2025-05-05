@@ -11,7 +11,6 @@ library(parallel)
 library(doParallel)
 library(ambient)
 library(mvnfast)
-library(optimParallel)
 
 
 
