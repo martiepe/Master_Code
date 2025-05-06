@@ -295,12 +295,12 @@ while (ik <= 100) {
       
       if(is.nan(l)){
         print("NaN")
-        return(list(l = -1e10, g = c(0,0,0,0)))
+        return(list(l = 1e10, g = c(0,0,0,0)))
       }
       
       if(is.infinite(l)){
         print("Inf")
-        return(list(l = -1e10, g = c(0,0,0,0)))
+        return(list(l = 1e10, g = c(0,0,0,0)))
         }else{
           #print(l)
         return(list(l = -l, g = lik_grad))
