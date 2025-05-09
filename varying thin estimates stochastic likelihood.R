@@ -20,7 +20,7 @@ load_lib(ggplot2, viridis, reshape2, gridExtra, foreach,
   iterators, parallel, doParallel,  ambient, mvnfast, optimParallel)
 
 
-
+set.seed(123)
 
 #perlin covariates
 lim <- c(-1, 1, -1, 1)*150
@@ -159,55 +159,46 @@ while (ik <= 100) {
     mu_y_all <- rep(X[1:(nrow(X) - 1), 2], each = N) + 
       1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X) - 1), 2]), each = N) / (N + 1)
     
+
     
-    
-    Z = array(data = NA, c(2, nrow(X)-1, M, N))
-    
-    for (i in 1:(nrow(X)-1)) {
-      Z[1,i, , ] = mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      Z[2,i, , ] = mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      
-    }
-    
-    #vectorized and paralellized likelihood and gradient function using numerical differentiation for gamma¨2
+    #vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
     lik_grad <- function(par, cl){
       #log-likelihood
       l = 0
       lik_grad = c(0,0,0,0)
       
       sigma <- diag(delta * par[4] / (N + 1), 2, 2)
-
+      delta_par <- delta * par[4] / (2 * (N + 1))
+      
       
       gamma = sqrt(par[4])
       chol_matrix = gamma*chol_m
       
       
       #number of simulations
+      clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                    "chol_matrix", "delta_par",
+                                    "par", "covlist", "bilinearGradVec", "delta"), envir = environment())
+      clusterEvalQ(cl, library(mvnfast))
       
-      #clusterEvalQ(cl, library(mvnfast))
       
       
       compute <- function(i){
-        gamma = sqrt(par[4])
-        
         mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
         mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
         
         
         
-        Z_x <- Z[1,i, , ]
-        Z_y <- Z[2,i, , ]
-
-        
-        
-        x_samples <- sweep(Z_x * gamma, 2, mu_x, `+`)      
-        y_samples <- sweep(Z_y * gamma, 2, mu_y, `+`)
+        x_samples <- mvnfast::rmvn(M, mu_x, sigma = chol_matrix, isChol = TRUE)
+        y_samples <- mvnfast::rmvn(M, mu_y, sigma = chol_matrix, isChol = TRUE)
         
         
         L_k = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = chol_matrix, isChol = TRUE) * 
                      mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
+
         
-        
+        #L_k <- 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = sigma_matrix) * 
+        #            mvnfast::dmvn(y_samples, mu_y, sigma = sigma_matrix))
         
         grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
         
@@ -231,7 +222,7 @@ while (ik <= 100) {
                     diag(delta*par[4]/(N+1), 2, 2)))
         }) * L_k
         
-        #computing gradient with respect to beta
+        
         lik_grad_k <- sapply(seq(M), function(j){
           grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
           us <- (delta*par[4]/((N+1)*2)) * 
@@ -247,51 +238,17 @@ while (ik <= 100) {
           
         })
         
-        #separate likelihood for computing gradient with respect to gamma^2
-        gamma2 = sqrt(par[4]+0.001)
-        
-        
-        x_samples <- sweep(Z_x * gamma2, 2, mu_x, `+`)      
-        y_samples <- sweep(Z_y * gamma2, 2, mu_y, `+`)
-        
-        
-        L_k2 = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = gamma2*chol_m, isChol = TRUE) * 
-                      mvnfast::dmvn(y_samples, mu_y, sigma = gamma2*chol_m, isChol = TRUE))
-        
-        
-        
-        grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
-        
-        u_0 <- (delta*gamma2^2/((N+1)*2)) * 
-          (par[1] * grad_0[1,,] + par[2] * grad_0[2,,] + par[3] * grad_0[3,,])
-        
-        full_x <- cbind(X[i,1], x_samples, X[i+1,1])
-        full_y <- cbind(X[i,2], y_samples, X[i+1,2])
-        
-        L_k2 <- sapply(seq(M), function(j) {
-          grads <- bilinearGradVec(cbind(x_samples[j, ], y_samples[j, ]), covlist)
-          us <- (delta*gamma2^2/((N+1)*2)) * 
-            (par[1] * grads[1,,] + par[2] * grads[2,,] + par[3] * grads[3,,]) 
-          us <- rbind(u_0, us)
-          prod(dmvn((cbind(full_x[j,0:N+2], full_y[j,0:N+2]) - 
-                       cbind(full_x[j,0:N+1], full_y[j,0:N+1])) - us, 
-                    matrix(c(0,0)),
-                    diag(delta*gamma2^2/(N+1), 2, 2)))
-        }) * L_k2
-        
-        lik1 = log(sum(L_k/M))
-        
-        #-sum(lik_grad_k[4, ]*L_k)/sum(L_k)
-        return(c(lik1, -sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k)), lik1 - log(sum(L_k2/M))))#
+        return(c(log(sum(L_k/M)), -sum(lik_grad_k[1, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[2, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[3, ]*L_k)/(2*sum(L_k)), -sum(lik_grad_k[4, ]*L_k)/(sum(L_k))))
       }
       
-      results <- parLapply(cl,  1:(nrow(X)-1), compute)
+      results <- parLapply(cl, 1:(nrow(X)-1), compute)
       
       l = sum(unlist(results)[(1:(nrow(X)-1))*5 -4])
       lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
       lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
       lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
-      lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])/0.001
+      lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
+      
       
       if(is.nan(l)){
         print("NaN")
@@ -301,17 +258,16 @@ while (ik <= 100) {
       if(is.infinite(l)){
         print("Inf")
         return(list(l = 1e10, g = c(0,0,0,0)))
-        }else{
-          #print(l)
+      }else{
+        #print(l)
         return(list(l = -l, g = lik_grad))
       }
       
     }
     
     
-    
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(20)
+    cl <- makeCluster(detectCores()-1)
     
     clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
                                    "covlist", "bilinearGradVec", "delta", "chol_m", "Z", "rmvn", "dmvn"), envir = environment())
@@ -326,7 +282,7 @@ while (ik <= 100) {
     params[ik*3+jk-3, 5] = thin
   }
   
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], thin = as.factor(params[,5]))
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(params[,5])*dt)
   save(df,file="varying_thin_estimates_stochastic_likelihood.Rda")
   
   
@@ -334,6 +290,8 @@ while (ik <= 100) {
   
   ik = ik + 1
 }
+
+
 
 
 ## plotting estimates ##
@@ -362,7 +320,7 @@ p4 <- ggplot(data = df, aes(x = thin, y = gammasq)) +
   labs(title = "gamma^2") +
   theme_bw()
 
+grid.arrange(p1,p2,p3,p4)
+sv()
 
-sv(grid.arrange(p1,p2,p3,p4))
-
-
+df

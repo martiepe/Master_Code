@@ -165,6 +165,7 @@ for (ik in 1:100) {
         mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
         
         
+        
         x_samples <- mvnfast::rmvn(M, mu_x, sigma = chol_matrix, isChol = TRUE)
         y_samples <- mvnfast::rmvn(M, mu_y, sigma = chol_matrix, isChol = TRUE)
         
@@ -172,7 +173,9 @@ for (ik in 1:100) {
         L_k = 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = chol_matrix, isChol = TRUE) * 
                      mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
         
-
+        
+        #L_k <- 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = sigma_matrix) * 
+        #            mvnfast::dmvn(y_samples, mu_y, sigma = sigma_matrix))
         
         grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
         
@@ -224,7 +227,18 @@ for (ik in 1:100) {
       lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
       
       
-      return(list(l = -l, g = lik_grad))
+      if(is.nan(l)){
+        print("NaN")
+        return(list(l = 1e10, g = c(0,0,0,0)))
+      }
+      
+      if(is.infinite(l)){
+        print("Inf")
+        return(list(l = 1e10, g = c(0,0,0,0)))
+      }else{
+        #print(l)
+        return(list(l = -l, g = lik_grad))
+      }
       
     }
     
