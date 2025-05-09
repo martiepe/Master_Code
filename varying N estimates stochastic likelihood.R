@@ -1,18 +1,24 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
-library(mvnfast)
-library(optimParallel)
+#library(Rhabit)
+#library(raster)
+#library(ggplot2)
+#library(viridis)
+#library(reshape2)
+#library(gridExtra)
+#library(mvtnorm)
+#library(foreach)
+#library(iterators)
+#library(parallel)
+#library(doParallel)
+#library(mvtnorm)
+#library(ambient)
+#library(mvnfast)
+#library(optimParallel)
+source("functions/utility_functions.R")
+source("functions/Rhabit_functions.R")
+sourceDir("functions") 
+load_lib(ggplot2, viridis, reshape2, gridExtra, foreach, 
+  iterators, parallel, doParallel,  ambient, mvnfast, optimParallel, ambient)
+
 
 
 
@@ -271,7 +277,7 @@ for (ik in 1:100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(detectCores()-1)
+    cl <- makeCluster(20)
     
     clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
                                   "covlist", "bilinearGradVec", "delta", "chol_m", "Z", "rmvn", "dmvn"), envir = environment())
@@ -322,5 +328,5 @@ p4 <- ggplot(data = df, aes(x = N, y = gammasq)) +
   theme_bw()
 
 
-grid.arrange(p1,p2,p3,p4)
+sv(grid.arrange(p1,p2,p3,p4))
 
