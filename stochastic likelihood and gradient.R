@@ -9,7 +9,6 @@ library(foreach)
 library(iterators)
 library(parallel)
 library(doParallel)
-library(mvtnorm)
 library(ambient)
 library(mvnfast)
 library(optimParallel)
@@ -232,7 +231,7 @@ lik_grad <- function(par, cl){
     })
     
     #separate likelihood for computing gradient with respect to gamma^2
-    gamma2 = sqrt(par[4]+0.01)
+    gamma2 = sqrt(par[4]+0.001)
     
     
     x_samples <- sweep(Z_x * gamma2, 2, mu_x, `+`)      
@@ -275,7 +274,7 @@ lik_grad <- function(par, cl){
   lik_grad[1] = sum(unlist(results)[(1:(nrow(X)-1))*5 -3])
   lik_grad[2] = sum(unlist(results)[(1:(nrow(X)-1))*5 -2])
   lik_grad[3] = sum(unlist(results)[(1:(nrow(X)-1))*5 -1])
-  lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])/0.01
+  lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])/0.001
   
   
 
@@ -284,7 +283,7 @@ lik_grad <- function(par, cl){
 }
 
 #precomputed standard normal distributions
-#vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
+#vectorized and paralellized likelihood and gradient function using analytical gradient and precomputed 
 lik_grad <- function(par, cl){
   #log-likelihood
   l = 0
@@ -479,6 +478,8 @@ lik_grad <- function(par, cl){
   return(list(l = -l, g = lik_grad))
   
 }
+
+
 
 
 # test speed of paralellized and vectorized likelihood and score
