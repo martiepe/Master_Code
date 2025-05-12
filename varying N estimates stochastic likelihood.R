@@ -1,18 +1,24 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
-library(mvnfast)
-library(optimParallel)
+#library(Rhabit)
+#library(raster)
+#library(ggplot2)
+#library(viridis)
+#library(reshape2)
+#library(gridExtra)
+#library(mvtnorm)
+#library(foreach)
+#library(iterators)
+#library(parallel)
+#library(doParallel)
+#library(mvtnorm)
+#library(ambient)
+#library(mvnfast)
+#library(optimParallel)
+source("functions/utility_functions.R")
+source("functions/Rhabit_functions.R")
+sourceDir("functions") 
+load_lib(ggplot2, viridis, reshape2, gridExtra, foreach, 
+  iterators, parallel, doParallel,  ambient, mvnfast, optimParallel, ambient)
+
 
 
 
@@ -91,20 +97,29 @@ speed <- 5
 
 
 set.seed(123)
+N
+dim(X)
 
-
+ik
+jk
+N
 
 params = matrix(NA, ncol = 5, nrow = 4*100)
 for (ik in 1:100) {
   for (jk in 1:4) {
+    
+    ik = 4
+    jk = 4
+    N = 99
     beta <- c(4,2,-0.1)
     thin = 100
     dt = 0.01
     delta = dt*thin
-    N = c(4,9,49,99)[jk]
+    #N = c(4,9,49,99)[jk]
     M = 50
     n_obs = 5000
     Tmax = n_obs*thin*dt
+    
     
     
     
@@ -113,18 +128,33 @@ for (ik in 1:100) {
     for(i in 1:ntrack)
       alltimes[[i]] <- time
     
-    # Generate tracks 
-    alldat <- lapply(alltimes, function(times) {
-      simLangevinMM(beta = beta, gamma2 = speed, times = times,
-                    loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
-    })
+    # Generate track
+    #alldat <- lapply(alltimes, function(times) {
+    #  simLangevinMM(beta = beta, gamma2 = speed, times = times,
+    #                loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
+    #})
+    
+    #Add ID column
+    for(zoo in 1:ntrack)
+      alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
     
     
-    #thinning tracks
+    
+    
+    #thinning track
     X = matrix(c(alldat[[1]]$x, alldat[[1]]$y), ncol = 2)
     n = nrow(X)
     X = X[(0:(n%/%thin -1))*thin +1, ]
     
+    
+    gradArray = bilinearGradVec(X, covlist)
+    
+
+    times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
+    ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
+    
+    gradArray = bilinearGradArray(X, covlist)
+
     
     sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
     sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
@@ -132,10 +162,12 @@ for (ik in 1:100) {
     chol_m = (chol(sigma_matrix))
     
     
+    
     mu_x_all <- rep(X[1:(nrow(X) - 1), 1], each = N) + 
       1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X) - 1), 1]), each = N) / (N + 1)
     mu_y_all <- rep(X[1:(nrow(X) - 1), 2], each = N) + 
       1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X) - 1), 2]), each = N) / (N + 1)
+    
     
     
     #vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
@@ -165,6 +197,7 @@ for (ik in 1:100) {
         mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
         
         
+        
         x_samples <- mvnfast::rmvn(M, mu_x, sigma = chol_matrix, isChol = TRUE)
         y_samples <- mvnfast::rmvn(M, mu_y, sigma = chol_matrix, isChol = TRUE)
         
@@ -173,6 +206,8 @@ for (ik in 1:100) {
                      mvnfast::dmvn(y_samples, mu_y, sigma = chol_matrix, isChol = TRUE))
         
         
+        #L_k <- 1 / (mvnfast::dmvn(x_samples, mu_x, sigma = sigma_matrix) * 
+        #            mvnfast::dmvn(y_samples, mu_y, sigma = sigma_matrix))
         
         grad_0 <- bilinearGradVec(matrix(X[i, 1:2], ncol = 2), covlist)
         
@@ -224,17 +259,33 @@ for (ik in 1:100) {
       lik_grad[4] = sum(unlist(results)[(1:(nrow(X)-1))*5])
       
       
-      return(list(l = -l, g = lik_grad))
+      if(is.nan(l)){
+        print("NaN")
+        return(list(l = 1e10, g = c(0,0,0,0)))
+      }
+      
+      if(is.infinite(l)){
+        print("Inf")
+        return(list(l = 1e10, g = c(0,0,0,0)))
+      }else{
+        #print(l)
+        return(list(l = -l, g = lik_grad))
+      }
       
     }
     
-    #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
     
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0))
+    
+    #using paralellized and vectorized likelihood in optim
+    cl <- makeCluster(20)
+    
+    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                  "covlist", "bilinearGradVec", "delta", "chol_m", "Z", "rmvn", "dmvn"), envir = environment())
+    
+    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     
     stopCluster(cl)
-    
+     
     
     
     print(o$par)
@@ -248,6 +299,7 @@ for (ik in 1:100) {
   
   print(ik)
 }
+
 
 
 
@@ -276,5 +328,5 @@ p4 <- ggplot(data = df, aes(x = N, y = gammasq)) +
   theme_bw()
 
 
-grid.arrange(p1,p2,p3,p4)
+sv(grid.arrange(p1,p2,p3,p4))
 
