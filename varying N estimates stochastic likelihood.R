@@ -97,7 +97,9 @@ speed <- 5
 set.seed(NULL)
 
 params = matrix(NA, ncol = 5, nrow = 4*100)
+save(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
 for (ik in 24:100) {
+  params = load(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
     thin = 100
@@ -265,9 +267,8 @@ for (ik in 24:100) {
     params[ik*4+jk-4, 1:4] = o$par
     params[ik*4+jk-4, 5] = N
   }
-  df = load(file = "varying_N_estimates_stochastic_likelihood.Rda")
-  df = rbind(df, params[ik*4-4 + 1:4, ])
-  #df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
+  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
+  save(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
   save(df,file="varying_N_estimates_stochastic_likelihood.Rda")
   
   
