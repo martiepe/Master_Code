@@ -99,7 +99,7 @@ set.seed(NULL)
 params = matrix(NA, ncol = 5, nrow = 4*100)
 save(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
 for (ik in 24:100) {
-  params = load(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
+  load(file="varying_N_estimates_stochastic_likelihood_params.Rda")
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
     thin = 100
