@@ -21,7 +21,7 @@ load_lib(ggplot2, viridis, reshape2, gridExtra, foreach,
 
 
 
-
+set.seed(123)
 
 
 #perlin covariates
@@ -94,51 +94,31 @@ ntrack <- 1
 #speed parameter for Langevin model
 speed <- 5
 
-
-
-set.seed(123)
-N
-dim(X)
-
-ik
-jk
-N
+set.seed(NULL)
 
 params = matrix(NA, ncol = 5, nrow = 4*100)
-for (ik in 1:100) {
+for (ik in 24:100) {
   for (jk in 1:4) {
-    
-    ik = 4
-    jk = 4
-    N = 99
     beta <- c(4,2,-0.1)
     thin = 100
     dt = 0.01
     delta = dt*thin
-    #N = c(4,9,49,99)[jk]
+    N = c(4,9,49,99)[jk]
     M = 50
     n_obs = 5000
     Tmax = n_obs*thin*dt
-    
-    
-    
+        
     
     time <- seq(0, Tmax, by = dt)
     alltimes <- list()
     for(i in 1:ntrack)
       alltimes[[i]] <- time
     
-    # Generate track
-    #alldat <- lapply(alltimes, function(times) {
-    #  simLangevinMM(beta = beta, gamma2 = speed, times = times,
-    #                loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
-    #})
-    
-    #Add ID column
-    for(zoo in 1:ntrack)
-      alldat[[zoo]] <- cbind(ID = rep(zoo, length(time)), alldat[[zoo]])
-    
-    
+    #Generate track
+    alldat <- lapply(alltimes, function(times) {
+      simLangevinMM(beta = beta, gamma2 = speed, times = times,
+                    loc0 = c(0, 0), cov_list = covlist, silent = TRUE)
+    })
     
     
     #thinning track
@@ -146,14 +126,7 @@ for (ik in 1:100) {
     n = nrow(X)
     X = X[(0:(n%/%thin -1))*thin +1, ]
     
-    
-    gradArray = bilinearGradVec(X, covlist)
-    
-
-    times = alldat[[1]]$t[(0:(n%/%thin -1))*thin +1]
-    ID = alldat[[1]]$ID[(0:(n%/%thin -1))*thin +1]
-    
-    gradArray = bilinearGradArray(X, covlist)
+        
 
     
     sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
@@ -280,7 +253,7 @@ for (ik in 1:100) {
     cl <- makeCluster(20)
     
     clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                  "covlist", "bilinearGradVec", "delta", "chol_m", "Z", "rmvn", "dmvn"), envir = environment())
+                                  "covlist", "bilinearGradVec", "delta", "chol_m", "rmvn", "dmvn"), envir = environment())
     
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     
@@ -292,8 +265,9 @@ for (ik in 1:100) {
     params[ik*4+jk-4, 1:4] = o$par
     params[ik*4+jk-4, 5] = N
   }
-  
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
+  df = load(file = "varying_N_estimates_stochastic_likelihood.Rda")
+  df = rbind(df, params[ik*4-4 + 1:4, ])
+  #df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]))
   save(df,file="varying_N_estimates_stochastic_likelihood.Rda")
   
   
