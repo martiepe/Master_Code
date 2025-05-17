@@ -14,7 +14,7 @@ library(ambient)
 library(mvnfast)
 library(optimParallel)
 
-
+set.seed(123)
 
 
 
@@ -95,7 +95,7 @@ set.seed(123)
 
 
 params = matrix(NA, ncol = 5, nrow = 5*100)
-for (ik in 1:100) {
+for (ik in 2:100) {
   beta <- c(4,2,-0.1)
   thin = 100
   dt = 0.01
@@ -245,7 +245,7 @@ for (ik in 1:100) {
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(12)
     
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0))
+    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     
     stopCluster(cl)
     
