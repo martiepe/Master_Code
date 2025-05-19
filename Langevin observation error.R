@@ -117,8 +117,8 @@ X = X[(0:(n%/%thin -1))*thin +1, ]
 
 
 
-N = 49
-M = 50
+N = 100
+M = 200
 delta  = dt*thin
 
 
@@ -141,10 +141,11 @@ lik <- function(par){
   
   result = sapply(seq(M), function(j){
     l_k = 0
-  
+    
+    #simulates observation error
     E = mvnfast::rmvn(nrow(X), matrix(c(0,0), nrow = 1), sigma = diag(sqrt(par[5]), 2, 2), isChol = TRUE)
 
-    l_k = l_k + mvnfast::dmvn(E, matrix(c(0,0), nrow = 1), sigma = diag(sqrt(par[5]), 2, 2), isChol = TRUE, log = TRUE) 
+    #l_k = l_k + mvnfast::dmvn(E, matrix(c(0,0), nrow = 1), sigma = diag(sqrt(par[5]), 2, 2), isChol = TRUE, log = TRUE) 
 
     Y = X + E
   
@@ -196,7 +197,7 @@ lik(c(4,2,-0.1,5,0.05))
 Sys.time() - t1
 
 
-cl <- makeCluster(detectCores()-1)     # set the number of processor cores
+cl <- makeCluster(12)     # set the number of processor cores
 clusterExport(cl, varlist = c("rmvn", "dmvn", "bilinearGradVec", "X", "chol_m", "M", "N", "delta", "covlist"))
 setDefaultCluster(cl=cl) # set 'cl' as default cluster
 t1 = Sys.time()
