@@ -25,7 +25,7 @@ set.seed(123)
 
 
 #perlin covariates
-lim <- c(-1, 1, -1, 1)*100
+lim <- c(-1, 1, -1, 1)*150
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -98,7 +98,7 @@ set.seed(NULL)
 
 #params = matrix(NA, ncol = 5, nrow = 4*100)
 #save(params,file="varying_N_estimates_stochastic_likelihood_params.Rda")
-for (ik in 7:100) {
+for (ik in 29:100) {
   load(file="varying_N_estimates_stochastic_likelihood_params.Rda")
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
