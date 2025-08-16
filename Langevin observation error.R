@@ -135,6 +135,11 @@ sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
 chol_m = (chol(sigma_matrix))
 
 
+#simulates observation error
+E = mvnfast::rmvn(nrow(X), matrix(c(0,0), nrow = 1), sigma = diag(1, 2, 2), isChol = TRUE)
+
+Z_x = mvnfast::rmvn(nrow(X), rep(0,N), sigma = chol_m, isChol = TRUE)
+Z_y = mvnfast::rmvn(nrow(X), rep(0,N), sigma = chol_m, isChol = TRUE)
 
 lik <- function(par){
   chol_matrix = sqrt(par[4])*chol_m
@@ -142,12 +147,9 @@ lik <- function(par){
   result = sapply(seq(M), function(j){
     l_k = 0
     
-    #simulates observation error
-    E = mvnfast::rmvn(nrow(X), matrix(c(0,0), nrow = 1), sigma = diag(sqrt(par[5]), 2, 2), isChol = TRUE)
-
     #l_k = l_k + mvnfast::dmvn(E, matrix(c(0,0), nrow = 1), sigma = diag(sqrt(par[5]), 2, 2), isChol = TRUE, log = TRUE) 
 
-    Y = X + E
+    Y = X + E*sqrt(par[5])
   
   
     mu_x_all <- rep(Y[1:(nrow(Y) - 1), 1], each = N) + 
@@ -156,8 +158,8 @@ lik <- function(par){
       1:N * rep((Y[2:nrow(Y), 2] - Y[1:(nrow(Y) - 1), 2]), each = N) / (N + 1)
   
   
-    x_samples <- mvnfast::rmvn(nrow(Y), rep(0,N), sigma = chol_matrix, isChol = TRUE)
-    y_samples <- mvnfast::rmvn(nrow(Y), rep(0,N), sigma = chol_matrix, isChol = TRUE)
+    x_samples <- Z_x*sqrt(par[4])
+    y_samples <- Z_y*sqrt(par[4])
   
     l_k = l_k - mvnfast::dmvn(x_samples, rep(0,N), sigma = chol_matrix, isChol = TRUE, log = TRUE) -
       mvnfast::dmvn(y_samples, rep(0,N), sigma = chol_matrix, isChol = TRUE, log = TRUE)
@@ -198,7 +200,7 @@ Sys.time() - t1
 
 
 cl <- makeCluster(12)     # set the number of processor cores
-clusterExport(cl, varlist = c("rmvn", "dmvn", "bilinearGradVec", "X", "chol_m", "M", "N", "delta", "covlist"))
+clusterExport(cl, varlist = c("rmvn", "dmvn", "bilinearGradVec", "X", "chol_m", "M", "N", "delta", "covlist", "E", "Z_x", "Z_y"))
 setDefaultCluster(cl=cl) # set 'cl' as default cluster
 t1 = Sys.time()
 optimParallel(par=c(0,0,0,1,0.05), fn=lik, lower=c(-Inf, -Inf, - Inf, 0.0001, 0.0001))
