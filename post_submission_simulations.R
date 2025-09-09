@@ -1,21 +1,9 @@
-library(Rhabit)
-library(raster)
-library(ggplot2)
-library(viridis)
-library(reshape2)
-library(gridExtra)
-library(mvtnorm)
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-library(mvtnorm)
-library(ambient)
 library(mvnfast)
-library(optimParallel)
+library(parallel)
+library(ambient)  # perlin noise
 library(Rcpp)
 Rcpp::sourceCpp("compute_lik_grad_full.cpp")
-
+library(here)
 
 
 set.seed(123)
@@ -103,7 +91,8 @@ simLMM <- function(delta, gamma2, covlist, beta, loc0, nobs){
   return(x)
 }
 
-
+# define cpp_path in global environment
+cpp_path <- here("compute_lik_grad_full.cpp")
 #vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
 lik_grad <- function(par, cl){
   #log-likelihood
@@ -120,7 +109,7 @@ lik_grad <- function(par, cl){
                                 "chol_matrix", "delta_par",
                                 "par", "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
   clusterEvalQ(cl, library(mvnfast))
-  cpp_path <- "C:/Users/marti/Desktop/Master_Code/compute_lik_grad_full.cpp"
+  cpp_path <- here("compute_lik_grad_full.cpp")
   
   # export the variable cpp_path (the name as a string)
   clusterExport(cl, varlist = "cpp_path")
@@ -189,11 +178,10 @@ lik_grad <- function(par, cl){
 
 
 
-
 #varying delta_t, fixed number of observations
 params = matrix(NA, ncol = 6, nrow = 5*100)
-while (ik <= 100) {
-  for (jk in 1:3) {
+for (ik in 1:100) {
+  for (jk in 1:5) {
     beta <- c(4,2,-0.1)
     thin = c(5, 10, 20, 50, 100)[jk]
     dt = 0.01
@@ -263,11 +251,10 @@ while (ik <= 100) {
 
 
 
-
 #varying delta_t, fixed maximum time
 params = matrix(NA, ncol = 6, nrow = 5*100)
-while (ik <= 100) {
-  for (jk in 1:3) {
+for (ik in 1:100) {
+  for (jk in 1:5) {
     beta <- c(4,2,-0.1)
     thin = c(5, 10, 20, 50, 100)[jk]
     dt = 0.01
@@ -340,7 +327,6 @@ while (ik <= 100) {
 
 
 
-
 #varying M
 params = matrix(NA, ncol = 6, nrow = 5*100)
 for (ik in 1:100) {
@@ -358,13 +344,13 @@ for (ik in 1:100) {
   
   for (jk in 1:5) {
     M = c(5, 10, 50, 100, 200)[jk]
-
+    
     sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
     sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
       t(lower.tri(sigma_matrix) * sigma_matrix)
     chol_m = (chol(sigma_matrix))
     
-
+    
     #brownian bridge endpoints
     mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
     mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
@@ -381,7 +367,7 @@ for (ik in 1:100) {
       B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
       B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
       
-
+      
       P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
                        mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
     }
@@ -408,7 +394,6 @@ for (ik in 1:100) {
   
   print(ik)
 }
-
 
 
 
@@ -472,7 +457,7 @@ for (ik in 1:100) {
     params[ik*5+jk-5, 5] = N
     params[ik*5+jk-5,6] = t
     
-
+    
   }
   
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]), time = params[,6])
