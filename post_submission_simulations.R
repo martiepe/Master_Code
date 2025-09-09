@@ -8,7 +8,7 @@ library(here)
 
 set.seed(123)
 #number of cores used in parallel computations
-ncores = 12
+ncores = 20
 #speed parameter for Langevin model
 speed = 5
 #covariate coefficients
@@ -16,8 +16,8 @@ beta = c(4,2,-0.1)
 
 
 
-#generating perlin covariates
-lim <- c(-1, 1, -1, 1)*100
+#generating perlin covariate
+lim <- c(-1, 1, -1, 1)*250
 resol <- 1
 ncov <- 2
 covlist <- list()
@@ -225,7 +225,7 @@ for (ik in 1:100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(ncores)
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -300,7 +300,7 @@ for (ik in 1:100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(ncores)
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -374,7 +374,7 @@ for (ik in 1:100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(ncores)
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -444,7 +444,7 @@ for (ik in 1:100) {
     
     
     #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(12)
+    cl <- makeCluster(ncores)
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
