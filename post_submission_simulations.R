@@ -8,7 +8,7 @@ library(here)
 
 set.seed(123)
 #number of cores used in parallel computations
-ncores = 20
+ncores = 12
 #speed parameter for Langevin model
 speed = 5
 #covariate coefficients
@@ -105,20 +105,7 @@ lik_grad <- function(par, cl){
   gamma = sqrt(par[4])
   chol_matrix = gamma*chol_m
   
-  clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                "chol_matrix", "delta_par",
-                                "par", "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
-  clusterEvalQ(cl, library(mvnfast))
-  cpp_path <- here("compute_lik_grad_full.cpp")
   
-  # export the variable cpp_path (the name as a string)
-  clusterExport(cl, varlist = "cpp_path")
-  
-  # load Rcpp and source the file on all workers
-  clusterEvalQ(cl, {
-    library(Rcpp)
-    sourceCpp(cpp_path)
-  })
   
   
   compute <- function(i){
@@ -177,7 +164,7 @@ lik_grad <- function(par, cl){
 
 
 
-
+print("varying delta_t, fixed number of observations")
 #varying delta_t, fixed number of observations
 params = matrix(NA, ncol = 6, nrow = 5*100)
 for (ik in 1:100) {
@@ -226,6 +213,26 @@ for (ik in 1:100) {
     
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(ncores)
+    
+    
+    
+    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                  "chol_m",
+                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+    clusterEvalQ(cl, library(mvnfast))
+    cpp_path <- here("compute_lik_grad_full.cpp")
+    
+    # export the variable cpp_path (the name as a string)
+    clusterExport(cl, varlist = "cpp_path")
+    
+    # load Rcpp and source the file on all workers
+    clusterEvalQ(cl, {
+      library(Rcpp)
+      sourceCpp(cpp_path)
+    })
+    
+    
+    
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -233,6 +240,7 @@ for (ik in 1:100) {
     print(delta)
     print(t)
     print(o$convergence)
+    print(o$counts)
     print(o$par)
     params[ik*5+jk-5, 1:4] = o$par
     params[ik*5+jk-5, 5] = delta
@@ -250,7 +258,7 @@ for (ik in 1:100) {
 
 
 
-
+print("varying delta_t, fixed maximum time")
 #varying delta_t, fixed maximum time
 params = matrix(NA, ncol = 6, nrow = 5*100)
 for (ik in 1:100) {
@@ -301,6 +309,23 @@ for (ik in 1:100) {
     
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(ncores)
+    
+    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                  "chol_m",
+                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+    clusterEvalQ(cl, library(mvnfast))
+    cpp_path <- here("compute_lik_grad_full.cpp")
+    
+    # export the variable cpp_path (the name as a string)
+    clusterExport(cl, varlist = "cpp_path")
+    
+    # load Rcpp and source the file on all workers
+    clusterEvalQ(cl, {
+      library(Rcpp)
+      sourceCpp(cpp_path)
+    })
+    
+    
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -308,6 +333,7 @@ for (ik in 1:100) {
     print(delta)
     print(t)
     print(o$convergence)
+    print(o$counts)
     print(o$par)
     params[ik*5+jk-5, 1:4] = o$par
     params[ik*5+jk-5, 5] = delta
@@ -326,7 +352,7 @@ for (ik in 1:100) {
 
 
 
-
+print("varying M")
 #varying M
 params = matrix(NA, ncol = 6, nrow = 5*100)
 for (ik in 1:100) {
@@ -375,6 +401,23 @@ for (ik in 1:100) {
     
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(ncores)
+    
+    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                  "chol_m",
+                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+    clusterEvalQ(cl, library(mvnfast))
+    cpp_path <- here("compute_lik_grad_full.cpp")
+    
+    # export the variable cpp_path (the name as a string)
+    clusterExport(cl, varlist = "cpp_path")
+    
+    # load Rcpp and source the file on all workers
+    clusterEvalQ(cl, {
+      library(Rcpp)
+      sourceCpp(cpp_path)
+    })
+    
+    
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -382,6 +425,7 @@ for (ik in 1:100) {
     print(M)
     print(t)
     print(o$convergence)
+    print(o$counts)
     print(o$par)
     params[ik*5+jk-5, 1:4] = o$par
     params[ik*5+jk-5, 5] = M
@@ -396,7 +440,8 @@ for (ik in 1:100) {
 }
 
 
-
+print("varying N")
+#varying N
 params = matrix(NA, ncol = 6, nrow = 4*100)
 for (ik in 1:100) {
   for (jk in 1:4) {
@@ -445,6 +490,23 @@ for (ik in 1:100) {
     
     #using paralellized and vectorized likelihood in optim
     cl <- makeCluster(ncores)
+    
+    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+                                  "chol_m",
+                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+    clusterEvalQ(cl, library(mvnfast))
+    cpp_path <- here("compute_lik_grad_full.cpp")
+    
+    # export the variable cpp_path (the name as a string)
+    clusterExport(cl, varlist = "cpp_path")
+    
+    # load Rcpp and source the file on all workers
+    clusterEvalQ(cl, {
+      library(Rcpp)
+      sourceCpp(cpp_path)
+    })
+    
+    
     t = Sys.time()
     o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
     t = Sys.time()-t
@@ -452,6 +514,7 @@ for (ik in 1:100) {
     print(N)
     print(t)
     print(o$convergence)
+    print(o$counts)
     print(o$par)
     params[ik*5+jk-5, 1:4] = o$par
     params[ik*5+jk-5, 5] = N
