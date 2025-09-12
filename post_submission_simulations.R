@@ -8,7 +8,7 @@ library(here)
 
 set.seed(123)
 #number of cores used in parallel computations
-ncores = 12
+ncores = 20
 #speed parameter for Langevin model
 speed = 5
 #covariate coefficients
