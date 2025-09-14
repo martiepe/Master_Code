@@ -163,286 +163,296 @@ lik_grad <- function(par, cl){
 }
 
 
-
-print("varying delta_t, fixed number of observations")
-#varying delta_t, fixed number of observations
-params = matrix(NA, ncol = 6, nrow = 5*100)
-for (ik in 1:100) {
-  for (jk in 1:5) {
-    beta <- c(4,2,-0.1)
-    thin = c(5, 10, 20, 50, 100)[jk]
-    dt = 0.01
-    delta = dt*thin
-    N = thin-1
-    M = 50
-    n_obs = 5000
-    Tmax = n_obs*thin*dt
-    
-    #simulating track
-    X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
-    
-    
-    #brownian bridge covariance matrix
-    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
-    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
-      t(lower.tri(sigma_matrix) * sigma_matrix)
-    chol_m = (chol(sigma_matrix))
-    
-    
-    #brownian bridge endpoints
-    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
-    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
-    #brownian bridge array
-    B <- array(data = NA, c(2, nrow(X)-1, M, N))
-    #importance sampling wights
-    P <- array(data = NA, c(nrow(X)-1,M))
-    #generating bridges
-    for (i in 1:(nrow(X)-1)) {
-      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
-      
-      # Generate all M sample tracks at once
-      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      
-      
-      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
-                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
-    }
-    
-    
-    #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(ncores)
-    
-    
-    
-    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                  "chol_m",
-                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
-    clusterEvalQ(cl, library(mvnfast))
-    cpp_path <- here("compute_lik_grad_full.cpp")
-    
-    # export the variable cpp_path (the name as a string)
-    clusterExport(cl, varlist = "cpp_path")
-    
-    # load Rcpp and source the file on all workers
-    clusterEvalQ(cl, {
-      library(Rcpp)
-      sourceCpp(cpp_path)
-    })
-    
-    
-    
-    t = Sys.time()
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
-    t = Sys.time()-t
-    stopCluster(cl)
-    print(delta)
-    print(t)
-    print(o$convergence)
-    print(o$counts)
-    print(o$par)
-    params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = delta
-    params[ik*5+jk-5,6] = t
-  }
-  
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(delta), time = params[,6])
-  save(df,file="varying_thin_estimates.Rda")
-  
-  
-  print(ik)
-  
-  ik = ik + 1
-}
-
-
-
-print("varying delta_t, fixed maximum time")
-#varying delta_t, fixed maximum time
-params = matrix(NA, ncol = 6, nrow = 5*100)
-for (ik in 1:100) {
-  for (jk in 1:5) {
-    beta <- c(4,2,-0.1)
-    thin = c(5, 10, 20, 50, 100)[jk]
-    dt = 0.01
-    Tmax = 500
-    
-    delta = dt*thin
-    N = thin-1
-    M = 50
-    n_obs = Tmax/(dt*thin)
-    
-    
-    #simulating track
-    X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
-    
-    
-    #brownian bridge covariance matrix
-    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
-    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
-      t(lower.tri(sigma_matrix) * sigma_matrix)
-    chol_m = (chol(sigma_matrix))
-    
-    
-    #brownian bridge endpoints
-    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
-    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
-    #brownian bridge array
-    B <- array(data = NA, c(2, nrow(X)-1, M, N))
-    #importance sampling wights
-    P <- array(data = NA, c(nrow(X)-1,M))
-    #generating bridges
-    for (i in 1:(nrow(X)-1)) {
-      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
-      
-      # Generate all M sample tracks at once
-      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      
-      
-      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
-                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
-    }
-    
-    
-    #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(ncores)
-    
-    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                  "chol_m",
-                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
-    clusterEvalQ(cl, library(mvnfast))
-    cpp_path <- here("compute_lik_grad_full.cpp")
-    
-    # export the variable cpp_path (the name as a string)
-    clusterExport(cl, varlist = "cpp_path")
-    
-    # load Rcpp and source the file on all workers
-    clusterEvalQ(cl, {
-      library(Rcpp)
-      sourceCpp(cpp_path)
-    })
-    
-    
-    t = Sys.time()
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
-    t = Sys.time()-t
-    stopCluster(cl)
-    print(delta)
-    print(t)
-    print(o$convergence)
-    print(o$counts)
-    print(o$par)
-    params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = delta
-    params[ik*5+jk-5,6] = t
-  }
-  
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(delta), time = params[,6])
-  save(df,file="varying_thin_estimates_fixed_Tmax.Rda")
-  
-  
-  print(ik)
-  
-  ik = ik + 1
-}
-
-
-
-
-print("varying M")
-#varying M
-params = matrix(NA, ncol = 6, nrow = 5*100)
-for (ik in 1:100) {
-  beta <- c(4,2,-0.1)
-  thin = 100
-  dt = 0.01
-  delta = dt*thin
-  N = 49
-  n_obs = 5000
-  Tmax = n_obs*thin*dt
-  
-  #simulating track
-  X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
-  
-  
-  for (jk in 1:5) {
-    M = c(5, 10, 50, 100, 200)[jk]
-    
-    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
-    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
-      t(lower.tri(sigma_matrix) * sigma_matrix)
-    chol_m = (chol(sigma_matrix))
-    
-    
-    #brownian bridge endpoints
-    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
-    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
-    #brownian bridge array
-    B <- array(data = NA, c(2, nrow(X)-1, M, N))
-    #importance sampling wights
-    P <- array(data = NA, c(nrow(X)-1,M))
-    #generating bridges
-    for (i in 1:(nrow(X)-1)) {
-      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
-      
-      # Generate all M sample tracks at once
-      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
-      
-      
-      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
-                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
-    }
-    
-    
-    #using paralellized and vectorized likelihood in optim
-    cl <- makeCluster(ncores)
-    
-    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                  "chol_m",
-                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
-    clusterEvalQ(cl, library(mvnfast))
-    cpp_path <- here("compute_lik_grad_full.cpp")
-    
-    # export the variable cpp_path (the name as a string)
-    clusterExport(cl, varlist = "cpp_path")
-    
-    # load Rcpp and source the file on all workers
-    clusterEvalQ(cl, {
-      library(Rcpp)
-      sourceCpp(cpp_path)
-    })
-    
-    
-    t = Sys.time()
-    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
-    t = Sys.time()-t
-    stopCluster(cl)
-    print(M)
-    print(t)
-    print(o$convergence)
-    print(o$counts)
-    print(o$par)
-    params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = M
-    params[ik*5+jk-5,6] = t
-  }
-  
-  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[, 5]), time = params[, 6])
-  save(df,file="varying_M_estimates_stochastic likelihood.Rda")
-  
-  
-  print(ik)
-}
-
+#
+#print("varying delta_t, fixed number of observations")
+##varying delta_t, fixed number of observations
+#params = matrix(NA, ncol = 6, nrow = 5*100)
+#for (ik in 1:100) {
+#  for (jk in 1:5) {
+#    beta <- c(4,2,-0.1)
+#    thin = c(5, 10, 20, 50, 100)[jk]
+#    dt = 0.01
+#    delta = dt*thin
+#    N = thin-1
+#    M = 50
+#    n_obs = 5000
+#    Tmax = n_obs*thin*dt
+#    
+#    #simulating track
+#    X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
+#    
+#    
+#    #brownian bridge covariance matrix
+#    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+#    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+#      t(lower.tri(sigma_matrix) * sigma_matrix)
+#    chol_m = (chol(sigma_matrix))
+#    
+#    
+#    #brownian bridge endpoints
+#    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
+#    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
+#    #brownian bridge array
+#    B <- array(data = NA, c(2, nrow(X)-1, M, N))
+#    #importance sampling wights
+#    P <- array(data = NA, c(nrow(X)-1,M))
+#    #generating bridges
+#    for (i in 1:(nrow(X)-1)) {
+#      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+#      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+#      
+#      # Generate all M sample tracks at once
+#      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      
+#      
+#      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
+#                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
+#    }
+#    
+#    
+#    #using paralellized and vectorized likelihood in optim
+#    cl <- makeCluster(ncores)
+#    
+#    
+#    
+#    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+#                                  "chol_m",
+#                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+#    clusterEvalQ(cl, library(mvnfast))
+#    cpp_path <- here("compute_lik_grad_full.cpp")
+#    
+#    # export the variable cpp_path (the name as a string)
+#    clusterExport(cl, varlist = "cpp_path")
+#    
+#    # load Rcpp and source the file on all workers
+#    clusterEvalQ(cl, {
+#      library(Rcpp)
+#      sourceCpp(cpp_path)
+#    })
+#    
+#    
+#    
+#    t = Sys.time()
+#    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
+#    t = Sys.time()-t
+#    stopCluster(cl)
+#    print(delta)
+#    print(t)
+#    print(o$convergence)
+#    print(o$counts)
+#    print(o$par)
+#    params[ik*5+jk-5, 1:4] = o$par
+#    params[ik*5+jk-5, 5] = delta
+#    params[ik*5+jk-5,6] = t
+#  }
+#  
+#  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(delta), time = params[,6])
+#  save(df,file="varying_thin_estimates.Rda")
+#  
+#  
+#  print(ik)
+#  
+#  ik = ik + 1
+#}
+#
+#
+#
+#print("varying delta_t, fixed maximum time")
+##varying delta_t, fixed maximum time
+#params = matrix(NA, ncol = 6, nrow = 5*100)
+#for (ik in 1:100) {
+#  for (jk in 1:5) {
+#    beta <- c(4,2,-0.1)
+#    thin = c(5, 10, 20, 50, 100)[jk]
+#    dt = 0.01
+#    Tmax = 500
+#    
+#    delta = dt*thin
+#    N = thin-1
+#    M = 50
+#    n_obs = Tmax/(dt*thin)
+#    
+#    
+#    #simulating track
+#    X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
+#    
+#    
+#    #brownian bridge covariance matrix
+#    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+#    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+#      t(lower.tri(sigma_matrix) * sigma_matrix)
+#    chol_m = (chol(sigma_matrix))
+#    
+#    
+#    #brownian bridge endpoints
+#    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
+#    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
+#    #brownian bridge array
+#    B <- array(data = NA, c(2, nrow(X)-1, M, N))
+#    #importance sampling wights
+#    P <- array(data = NA, c(nrow(X)-1,M))
+#    #generating bridges
+#    for (i in 1:(nrow(X)-1)) {
+#      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+#      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+#      
+#      # Generate all M sample tracks at once
+#      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      
+#      
+#      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
+#                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
+#    }
+#    
+#    
+#    #using paralellized and vectorized likelihood in optim
+#    cl <- makeCluster(ncores)
+#    
+#    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+#                                  "chol_m",
+#                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+#    clusterEvalQ(cl, library(mvnfast))
+#    cpp_path <- here("compute_lik_grad_full.cpp")
+#    
+#    # export the variable cpp_path (the name as a string)
+#    clusterExport(cl, varlist = "cpp_path")
+#    
+#    # load Rcpp and source the file on all workers
+#    clusterEvalQ(cl, {
+#      library(Rcpp)
+#      sourceCpp(cpp_path)
+#    })
+#    
+#    
+#    t = Sys.time()
+#    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
+#    t = Sys.time()-t
+#    stopCluster(cl)
+#    print(delta)
+#    print(t)
+#    print(o$convergence)
+#    print(o$counts)
+#    print(o$par)
+#    params[ik*5+jk-5, 1:4] = o$par
+#    params[ik*5+jk-5, 5] = delta
+#    params[ik*5+jk-5,6] = t
+#  }
+#  
+#  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], dt = as.factor(delta), time = params[,6])
+#  save(df,file="varying_thin_estimates_fixed_Tmax.Rda")
+#  
+#  
+#  print(ik)
+#  
+#  ik = ik + 1
+#}
+#
+#
+#
+#
+#print("varying M")
+##varying M
+#params = matrix(NA, ncol = 6, nrow = 5*100)
+#for (ik in 1:100) {
+#  beta <- c(4,2,-0.1)
+#  thin = 100
+#  dt = 0.01
+#  delta = dt*thin
+#  N = 49
+#  n_obs = 5000
+#  Tmax = n_obs*thin*dt
+#  
+#  #simulating track
+#  X = simLMM(delta,speed,covlist,beta,c(0,0),n_obs)
+#  
+#  
+#  for (jk in 1:5) {
+#    M = c(5, 10, 50, 100, 200)[jk]
+#    
+#    sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+#    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+#      t(lower.tri(sigma_matrix) * sigma_matrix)
+#    chol_m = (chol(sigma_matrix))
+#    
+#    
+#    #brownian bridge endpoints
+#    mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
+#    mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
+#    #brownian bridge array
+#    B <- array(data = NA, c(2, nrow(X)-1, M, N))
+#    #importance sampling wights
+#    P <- array(data = NA, c(nrow(X)-1,M))
+#    #generating bridges
+#    for (i in 1:(nrow(X)-1)) {
+#      mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
+#      mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+#      
+#      # Generate all M sample tracks at once
+#      B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+#      
+#      
+#      P[i, 1:M] = 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
+#                       mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
+#    }
+#    
+#    
+#    #using paralellized and vectorized likelihood in optim
+#    cl <- makeCluster(ncores)
+#    
+#    clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
+#                                  "chol_m",
+#                                  "covlist", "bilinearGradVec", "delta", "B", "P"), envir = environment())
+#    clusterEvalQ(cl, library(mvnfast))
+#    cpp_path <- here("compute_lik_grad_full.cpp")
+#    
+#    # export the variable cpp_path (the name as a string)
+#    clusterExport(cl, varlist = "cpp_path")
+#    
+#    # load Rcpp and source the file on all workers
+#    clusterEvalQ(cl, {
+#      library(Rcpp)
+#      sourceCpp(cpp_path)
+#    })
+#    
+#    
+#    t = Sys.time()
+#    o = optim(par = c(0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf, -Inf, 0.0001))
+#    t = Sys.time()-t
+#    stopCluster(cl)
+#    print(M)
+#    print(t)
+#    print(o$convergence)
+#    print(o$counts)
+#    print(o$par)
+#    params[ik*5+jk-5, 1:4] = o$par
+#    params[ik*5+jk-5, 5] = M
+#    params[ik*5+jk-5,6] = t
+#  }
+#  
+#  df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], M = as.factor(params[, 5]), time = params[, 6])
+#  save(df,file="varying_M_estimates_stochastic likelihood.Rda")
+#  
+#  
+#  print(ik)
+#}
+#
 
 print("varying N")
+
+load("varying_N_estimates.Rda")
+
 #varying N
 params = matrix(NA, ncol = 6, nrow = 4*100)
+
+params[,1] = df$beta1
+params[,2] = df$beta2
+params[,3] = df$beta3
+params[,4] = df$gammasq
+params[,5] = as.numeric(as.character(df$N))
+params[,6] = df$time
 for (ik in 1:100) {
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
