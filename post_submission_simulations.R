@@ -441,18 +441,8 @@ lik_grad <- function(par, cl){
 #
 
 print("varying N")
-
-load("varying_N_estimates.Rda")
-
 #varying N
 params = matrix(NA, ncol = 6, nrow = 4*100)
-
-params[,1] = df$beta1
-params[,2] = df$beta2
-params[,3] = df$beta3
-params[,4] = df$gammasq
-params[,5] = as.numeric(as.character(df$N))
-params[,6] = df$time
 for (ik in 1:100) {
   for (jk in 1:4) {
     beta <- c(4,2,-0.1)
@@ -526,17 +516,14 @@ for (ik in 1:100) {
     print(o$convergence)
     print(o$counts)
     print(o$par)
-    params[ik*5+jk-5, 1:4] = o$par
-    params[ik*5+jk-5, 5] = N
-    params[ik*5+jk-5,6] = t
-    
-    
+    params[ik*4+jk-4, 1:4] = o$par
+    params[ik*4+jk-4, 5] = N
+    params[ik*4+jk-4,6] = t
+
+
   }
   
   df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], gammasq = params[,4], N = as.factor(params[,5]), time = params[,6])
   save(df,file="varying_N_estimates.Rda")
-  
-  
-  print(ik)
-}
+  }
 
