@@ -11,6 +11,7 @@ library(terra)
 library(dplyr)
 library(ggplot2)
 library(ggbrace)
+library(patchwork)
 
 # define custom functions
 {
@@ -73,15 +74,19 @@ library(ggbrace)
   }
   # simulate thinned Langevin movement model
   simLMM <- function(delta, gamma2, covlist, beta, loc0, nobs){ 
-      x <- sumLTrack(delta, gamma2, covlist, beta, loc0, nobs)  # Simulate high-resolution track
-      x <- thinTrack(x, delta) # Thin the track
-      return(x)
-    }
+    x <- sumLTrack(delta, gamma2, covlist, beta, loc0, nobs)  # Simulate high-resolution track
+    x <- thinTrack(x, delta) # Thin the track
+    return(x)
+  }
 }
 
 
 # simulate covariate raster layers
-set.seed(123)
+seed <- runif(1,1,1e6); print(seed)
+set.seed(265240.4)
+# simulate data
+
+
 #generating perlin covariates
 lim <- c(-1, 1, -1, 1)*100
 resol <- 1
@@ -105,13 +110,14 @@ covlist[[3]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygr
 # define parameters
 ##  simulation parameters 
 speed <- 5  # speed parameter for Langevin model
-beta <- c(4,2,-0.1)  # covariate selection coefficients
+beta <- c(-10,0,0)  # covariate selection coefficients
+# beta <- c(4,2,-0.1)  # covariate selection coefficients
 n_tracks <- 1  # number of tracks
 # bridge parameters
 thin <- 20 # c(5, 10, 20, 50, 100)
 dt <- 0.01
 M <- 50
-n_obs <- 40
+n_obs <- 2
 
 # generate data
 delta = dt*thin
@@ -149,6 +155,8 @@ for (i in 1:(nrow(X)-1)) {
 }
 
 # generate plot ####
+# prep plot data
+
 # define step to visualize
 time_step <- 1
 obs_start <- X[time_step, ]
@@ -162,10 +170,11 @@ latent_end_idx <- time_step * thin + 1
 # Reconstruct the latent path (you'll need to save this from simLMM)
 # For now, we'll extract it from the bridge midpoints plus endpoints
 latent_x <- x[latent_start_idx:latent_end_idx,1]*-1
-latent_y <- x[latent_start_idx:latent_end_idx,2]
+latent_y <- x[latent_start_idx:latent_end_idx,2]*-1.15
 latent_track <- data.frame(x = latent_x, y = latent_y, 
                            t = seq(0, delta, length.out = N + 2),
-                           type = "Latent Track")
+                           type = "Latent Track",
+                           linewidth = 0.75, alpha = 1)
 
 # Select a subset of bridges to plot (e.g., 8 out of M bridges)
 n_bridges_plot <- 4
@@ -183,10 +192,11 @@ for (m in bridge_indices) {
   
   bridge_df <- data.frame(
     x = bridge_x*-1,
-    y = bridge_y,
+    y = bridge_y*-1.15,
     t = seq(0, delta, length.out = N + 2),
     bridge_id = as.factor(m),
-    type = "Brownian Bridge"
+    type = "Brownian Bridge",
+    linewidth = 0.5, alpha = 0.4
   )
   bridge_data <- rbind(bridge_data, bridge_df)
 }
@@ -194,15 +204,17 @@ for (m in bridge_indices) {
 # Observed points
 obs_points <- data.frame(
   x = c(obs_start[1], obs_end[1])*-1,
-  y = c(obs_start[2], obs_end[2]),
+  y = c(obs_start[2], obs_end[2])*-1.15,
   t = c(0, delta),
   label = c("italic(t)[0]", "italic(t)[1]"),
-  type = "Observed"
+  type = "Observed",
+  linewidth = 1,
+  alpha = 1
 )
 obs_text <- obs_points
 obs_text$y <- obs_text$y +c(-0.2, 0.25)
 
-
+all_tracks <- bind_rows(obs_points, bridge_data, latent_track)
 # Create the plot
 ## define colors
 col_obs <- "#5A78C1"
@@ -213,10 +225,24 @@ theme <- theme_minimal() +
   theme(legend.position = "bottom",
         legend.justification = "center",
         legend.margin = margin(t = 0, unit = "pt"),
-        legend.box.margin = margin(t = -100, unit = "pt"),
+        legend.box.margin = margin(t = -10, unit = "pt"),
         panel.border = element_rect(fill = NA, color = "gray70"),
+        panel.grid.major.y = element_blank(),
         panel.grid.minor.y = element_blank())
-# XY plot
+# define y-axis limits
+y_diff <- abs(diff(range(all_tracks$y)))
+y_top <- max(all_tracks$y)+y_diff*0.3
+y_bot <- min(all_tracks$y)+y_diff*0.1
+y_mid <- y_bot + (y_top-y_bot)/2
+y_ran <- y_top-y_bot
+lab_pos <- data.frame(par = c("h","dt","M","N"),
+                      pos = c(y_bot+y_ran*1,
+                              y_bot+y_ran*0.9,
+                              y_bot+y_ran*0.75,
+                              y_bot+y_ran*0.6))
+cur_dif <- 0.1
+#
+# space-space plot ####
 p1 <-  ggplot(obs_points, aes(x = x, y = y, col = type)) +
   # paths
   geom_path(linewidth = 1) +
@@ -230,15 +256,15 @@ p1 <-  ggplot(obs_points, aes(x = x, y = y, col = type)) +
   geom_point(size = 2, shape = 21, fill = col_obs) +
   labs(x = "X", y = "Y") +
   coord_fixed()  + 
-  theme + 
-  theme(panel.grid.minor = element_blank())
+  theme  + 
+  theme(panel.grid = element_blank(),
+        axis.text = element_blank())
 
-# Y vs Time plot
+# space-time plot ####
 p2 <- ggplot(obs_points, aes(x = t, y = y, col = type)) +
   # paths
   geom_path(data = obs_points, linewidth = 1) +
-  geom_path(data = bridge_data, 
-            aes(group = bridge_id),
+  geom_path(data = bridge_data, aes(group = bridge_id),
             alpha = 0.4, linewidth = 0.5) +
   geom_path(data = latent_track, linewidth = 0.75) +
   # points
@@ -246,40 +272,47 @@ p2 <- ggplot(obs_points, aes(x = t, y = y, col = type)) +
   geom_point(data = latent_track, size = 1) +
   geom_point(data = obs_points, size = 2, shape = 21, fill = col_obs) +
   # Curly bracket for h
-  stat_brace(aes(x = c(0, dt), y = c(0.65, 0.65)), 
-             width = 0.08, col = col_latent, linewidth = 0.5) +
   annotate("text", x = dt/2-0.0025, 
-           y = 0.85, hjust = 0,
+           y = lab_pos[1,2],#y_top-y_diff*0.00+0.2, 
+           hjust = 0, vjust = 0,
            label = paste0("italic(h) == ", dt), parse = TRUE,
-           color = col_latent, size = 4,
-           hjust = 0) +
+           color = col_latent, size = 4) +
+  stat_brace(aes(x = c(0, dt), 
+                 y = rep(lab_pos[1,2]-cur_dif),2), #rep(y_top-y_diff*0.00, 2)), 
+             width = y_ran/50, col = col_latent, linewidth = 0.5) +
   # Curly bracket for delta_t
-  stat_brace(aes(x = c(0, 0.2), y = c(0.4, 0.4)), 
-             width = 0.2, col = col_obs, linewidth = 0.5) +
   annotate("text", x = delta/2-0.0025, 
-           y = 0.7, hjust = 0,
+           y = lab_pos[2,2], #y_top-y_diff*0.2 + 0.2, 
+           hjust = 0, vjust = 0,
            label = paste0("Delta[italic(t)] == ", delta), parse = TRUE,
            color = col_obs, size = 4) +
+  stat_brace(aes(x = c(0, 0.2), 
+                 y = rep(lab_pos[2,2]-cur_dif),2),#rep(y_top-y_diff*0.2, 2)), 
+             width = y_ran/20, col = col_obs, linewidth = 0.5) +
   # M annotation with line
-  annotate("segment", 
-           x = max(obs_points$t) * 0.65, 
-           xend = max(obs_points$t) * 0.75,
-           y = 0.25,
-           yend = 0.25,
-           color = col_bridge, linewidth = 0.5) +
+  geom_path(data = data.frame(x = c(0.5,1.25,2,2.75,3.5)/4*delta/10 + max(obs_points$t) * 0.65,
+                              y = c(0.3,0,1,-0.75,0)/4*y_ran/20 + lab_pos[3,2]),
+            aes(x = x, y = y),
+            col = col_bridge, linewidth = 0.5, alpha = 0.5) + 
+  # annotate("segment", 
+  #          x = max(obs_points$t) * 0.65, 
+  #          xend = max(obs_points$t) * 0.75,
+  #          y = rep(lab_pos[3,2],2),#rep(y_top-y_diff*0.25, 2),
+  #          yend =  rep(lab_pos[3,2],2),#rep(y_top-y_diff*0.25, 2),
+  #          color = col_bridge, linewidth = 0.5) +
   annotate("text", 
            x = max(obs_points$t) * 0.8, 
-           y = 0.25,
+           y = lab_pos[3,2], # rep(y_top-y_diff*0.25, 2),
            label = paste0("italic(M) == ", n_bridges_plot), parse = TRUE,
            hjust = 0, size = 4) +
   # N annotation with point
   annotate("point", 
            x = max(obs_points$t) * 0.7, 
-           y = 0,
+           y = rep(lab_pos[4,2],,2), #rep(y_top-y_diff*0.35, 2),
            color = col_bridge, size = 0.5) +
   annotate("text", 
            x = max(obs_points$t) * 0.8, 
-           y = 0,
+           y =  lab_pos[4,2], #rep(y_top-y_diff*0.35, 2),
            label = paste0("italic(N) == ", N), parse = TRUE,
            hjust = 0, size = 4) +
   # text
@@ -295,14 +328,15 @@ p2 <- ggplot(obs_points, aes(x = t, y = y, col = type)) +
                        by = 0.01)
   ) +
   coord_cartesian(clip = "off") + 
-  labs(x = "Time", y = "Y")
+  labs(x = "Time", y = "Y") + 
+  theme(axis.text.y = element_blank())
 
-# Combine plots with shared legend at bottom center
+# Combine plots with shared legend at bottom center  ####
 combined_plot <- (p1 | p2) + 
   plot_layout(guides = "collect") +
   plot_annotation(tag_levels = 'a', tag_suffix = ")") &
-  scale_y_continuous(limits = range(bridge_data$y) + c(-0.1, 0.95),
-                     expand = expansion(mult = c(0, 0.01))) &
+  scale_y_continuous(limits = c(min(all_tracks$y), y_top),
+                     expand = expansion(mult = c(0.1, 0.1))) &
   scale_color_manual(
     name = "",
     values = c("Observed" = col_obs, "Latent Track" = col_latent, "Brownian Bridge" = col_bridge),
@@ -314,7 +348,6 @@ combined_plot <- (p1 | p2) +
         plot.tag.position = c(0, 1),
         plot.tag = element_text(hjust = 0, vjust = 0),
         plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"))
-
 # save plot
 ggsave(
   here("figures/fig1_concept.pdf"),
