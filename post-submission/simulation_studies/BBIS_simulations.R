@@ -16,6 +16,7 @@ set.seed(123)
 speed <- 5              # speed parameter for Langevin model
 dt    <- 0.01           # temporal resolution of simulated tracks
 beta  <- c(4, 2, -0.1)  # covariate coefficients
+loc0  <- c(0, 0)         # starting location of tracks
 
 ## default estimation pars
 ncores <- 20     # number of cores used in parallel computations
@@ -67,7 +68,7 @@ for (ik in 1:n_sim) {
     Tmax <- n_obs_sim*thin_sim*dt_sim
     
     # simulating track
-    X <- simLMM(delta, speed, covlist, beta_sim, c(0,0), n_obs_sim)
+    X <- simLMM(delta, speed, covlist, beta_sim, loc0, n_obs_sim)
     
     # fit model
     out <- fit_langevin_bbis(X, covlist, delta, N = N_sim, M = M_sim,
@@ -101,7 +102,7 @@ for (ik in 1:n_sim) {
     n_obs_sim <- Tmax/(dt_sim*thin_sim)
     
     # simulating track
-    X <- simLMM(delta, speed, covlist, beta_sim, c(0,0), n_obs_sim)
+    X <- simLMM(delta, speed, covlist, beta_sim, loc0, n_obs_sim)
     
     # fit model
     out <- fit_langevin_bbis(X, covlist, delta, N = N_sim, M = M_sim,
@@ -132,7 +133,7 @@ for (ik in 1:n_sim) {
   Tmax <- n_obs_sim*thin_sim*dt_sim
   
   # simulating track
-  X <- simLMM(delta, speed, covlist, beta, c(0,0), n_obs_sim)
+  X <- simLMM(delta, speed, covlist, beta_sim, loc0, n_obs_sim)
   
   for (jk in seq_along(sim_var)) {
     M_sim <- sim_var[jk]
@@ -168,7 +169,7 @@ for (ik in 1:n_sim) {
     Tmax <- n_obs_sim*thin_sim*dt_sim
     
     # simulating track
-    X <- simLMM(delta, speed, covlist, beta_sim, c(0,0), n_obs_sim)
+    X <- simLMM(delta, speed, covlist, beta_sim, loc0, n_obs_sim)
     
     # fit model
     out <- fit_langevin_bbis(X, covlist, delta, N = N_sim, M = M_sim,
