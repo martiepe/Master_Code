@@ -291,46 +291,45 @@ lik_grad <- function(par, cl, n_cov){
   l = 0
   lik_grad = rep(0, n_cov + 1)
   
-  sigma <- diag(delta * par[n_cov + 1] / (N + 1), 2, 2)
-  delta_par <- delta * par[n_cov + 1] / (2 * (N + 1))
+  #sigma <- diag(delta * par[n_cov + 1] / (N + 1), 2, 2)
   
-  gamma = sqrt(par[n_cov + 1])
-  chol_matrix = gamma * chol_m
+  #chol_matrix = gamma * chol_m
   
   compute <- function(i){
-    mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-    mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+    mu_x = rep(X$x[i], each = N[i]) + 1:(N[i]) * rep((X$x[i+1] - X$x[i]), each = N[i]) / (N[i]+1)
+    mu_y = rep(X$y[i], each = N[i]) + 1:(N[i]) * rep((X$y[i+1] - X$y[i]), each = N[i]) / (N[i]+1)
     
-    x_samples = sweep(B[1, i, 1:M, 1:N] * gamma, 2, mu_x, "+")
-    y_samples = sweep(B[2, i, 1:M, 1:N] * gamma, 2, mu_y, "+")
     
-    L_k = P[i, 1:M] * gamma^(2 * N)
+    delta_par <- delta[i] * par[n_cov + 1] / (2 * (N[i] + 1))
     
-    full_x <- cbind(X[i, 1], x_samples, X[i + 1, 1])
-    full_y <- cbind(X[i, 2], y_samples, X[i + 1, 2])
+    gamma = sqrt(par[n_cov + 1])
+    
+    
+    
+    x_samples = sweep(B[[i]][1, 1:M, 1:(N[i])] * gamma, 2, mu_x, "+")
+    y_samples = sweep(B[[i]][2, 1:M, 1:(N[i])] * gamma, 2, mu_y, "+")
+    
+    L_k = P[i, 1:M] * gamma^(2 * N[i])
+    
+    full_x <- cbind(X$x[i], x_samples, X$x[i + 1])
+    full_y <- cbind(X$y[i], y_samples, X$y[i + 1])
     
     # Call C++ function
     # res_mat is (n_cov + 2) x M: 1 row for likelihood, n_cov rows for beta gradients, 1 row for variance gradient
     
-    
-    
-    
-    
-    
-    
-    
-    res_mat <- compute_lik_grad_full_cpp(full_x, full_y, L_k, X, i, par, delta, N, covlist)
+  
+    res_mat <- compute_lik_grad_full_cpp(full_x, full_y, L_k, X, i, par, delta[i], N[i], covlist)
     
     L_k_new <- res_mat[1, ]
     loglike_i <- log(sum(L_k_new / M))
     
-    # Compute gradients for all beta coefficients
+    #Compute gradients for all beta coefficients
     grad_beta <- numeric(n_cov)
     for(j in 1:n_cov) {
       grad_beta[j] = -sum(res_mat[j + 1, ] * L_k_new) / (2 * sum(L_k_new))
     }
     
-    # Gradient for variance parameter
+    #Gradient for variance parameter
     grad_sigma = -sum(res_mat[n_cov + 2, ] * L_k_new) / (sum(L_k_new))
     
     return(c(loglike_i, grad_beta, grad_sigma))
@@ -420,53 +419,42 @@ fit_langevin_bbis <- function(X, covlist, delta_max, N = 4, M = 50, ncores = 10,
   
   #generating brownian bridges for each transition
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  # Brownian bridge covariance matrix
-  sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
-  sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
-    t(lower.tri(sigma_matrix) * sigma_matrix)
-  chol_m <- chol(sigma_matrix)
-  
-  # Brownian bridge endpoints
-  mu_x_all <- rep(X[1:(nrow(X)-1), 1], each = N) + 
-    1:N * rep((X[2:nrow(X), 1] - X[1:(nrow(X)-1), 1]), each = N) / (N+1)
-  mu_y_all <- rep(X[1:(nrow(X)-1), 2], each = N) + 
-    1:N * rep((X[2:nrow(X), 2] - X[1:(nrow(X)-1), 2]), each = N) / (N+1)
-  
   # Brownian bridge array
-  B <- array(data = NA, c(2, nrow(X)-1, M, N))
+  B = list()
   # Importance sampling weights
-  P <- array(data = NA, c(nrow(X)-1, M))
+  P = array(data = NA, length(delta), M)
   
-  # Generate bridges
-  if(verpose) cat("Generating Brownian bridges...\n")
-  for (i in 1:(nrow(X)-1)) {
-    mu_x <- mu_x_all[((i - 1) * N + 1):(i * N)]
-    mu_y <- mu_y_all[((i - 1) * N + 1):(i * N)]
+  for (k in 1:length(transitions)) {
+    #make cholesky matrix for brownian bridges
     
-    B[1, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0, N), sigma = chol_m, isChol = TRUE)
-    B[2, i, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0, N), sigma = chol_m, isChol = TRUE)
+    sigma_matrix <- delta * outer(1 - 1:N[k]/(N[k]+1), 1:N[k]/(N[k]+1))
+    sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+      t(lower.tri(sigma_matrix) * sigma_matrix)
+    chol_m <- chol(sigma_matrix)
     
-    P[i, 1:M] <- 1/(mvnfast::dmvn(B[1, i, 1:M, 1:N], rep(0, N), sigma = chol_m, isChol = TRUE) * 
-                      mvnfast::dmvn(B[2, i, 1:M, 1:N], rep(0, N), sigma = chol_m, isChol = TRUE))
+    #list of brownian bridges for each transition
+    B[[k]] = array(data = NA, c(2, M, N))
+    
+      
+    B[[k]][1, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0, N), sigma = chol_m, isChol = TRUE)
+    B[[k]][2, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0, N), sigma = chol_m, isChol = TRUE)
+    
+    
+    #list of Brownian bridge probability for each transition
+    P[k, 1:M] = 1/(mvnfast::dmvn(B[[k]][1, 1:M, 1:N], rep(0, N), sigma = chol_m, isChol = TRUE) * 
+               mvnfast::dmvn(B[[k]][2, 1:M, 1:N], rep(0, N), sigma = chol_m, isChol = TRUE))
   }
+  
+  
+  
   
   # Set up parallel cluster
   if(verpose) cat("Setting up parallel cluster with", ncores, "cores...\n")
   cl <- makeCluster(ncores)
   
   # Export variables to cluster
-  clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
-                                "chol_m", "covlist", "delta", "B", "P", "n_cov"), 
+  clusterExport(cl, varlist = c("X", "N", "M",
+                                "covlist", "delta", "B", "P", "n_cov"), 
                 envir = environment())
   
   # Load required libraries on workers
