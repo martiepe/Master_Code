@@ -70,7 +70,7 @@ bilinearGradVec <- function(loc_mat, cov_list) {
 
 # vectorized and paralellized likelihood and gradient function using analytical gradient and no precomputed 
 # Generalized likelihood function
-lik_grad <- function(par, cl, n_cov){
+lik_grad <- function(par, cl, n_cov, chol_m){
   # par has length n_cov + 1: first n_cov are beta coefficients, last is variance
   
   l = 0
@@ -166,7 +166,7 @@ fit_langevin_bbis <- function(X, covlist, delta, N = 4, M = 50, ncores = 10,
   }
   
   par_init <- c(init_beta, init_sigma)
-  
+
   # Brownian bridge covariance matrix
   sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
   sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
@@ -200,7 +200,7 @@ fit_langevin_bbis <- function(X, covlist, delta, N = 4, M = 50, ncores = 10,
   # Set up parallel cluster
   if(verpose) cat("Setting up parallel cluster with", ncores, "cores...\n")
   cl <- makeCluster(ncores)
-  
+
   # Export variables to cluster
   clusterExport(cl, varlist = c("X", "N", "M", "mu_x_all", "mu_y_all",
                                 "chol_m", "covlist", "delta", "B", "P", "n_cov"), 
@@ -224,10 +224,9 @@ fit_langevin_bbis <- function(X, covlist, delta, N = 4, M = 50, ncores = 10,
   
   # Set bounds: no bounds on betas, lower bound on sigma
   lower_bounds <- c(rep(-Inf, n_cov), lower_sigma)
-  
   o <- optim(par = par_init, 
-             fn = function(x) lik_grad(x, cl, n_cov)$l, 
-             gr = function(x) lik_grad(x, cl, n_cov)$g, 
+             fn = function(x) lik_grad(x, cl, n_cov, chol_m)$l, 
+             gr = function(x) lik_grad(x, cl, n_cov, chol_m)$g, 
              method = "L-BFGS-B", 
              lower = lower_bounds)
   
