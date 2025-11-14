@@ -5,6 +5,8 @@ library(mvnfast)
 library(parallel)
 library(terra)
 library(dplyr)
+library(Rhabit)
+library(raster)
 # custom functions
 source(here("functions/utility_functions.R"))
 sourceDir("functions")
@@ -95,6 +97,7 @@ gradarray <- bilinearGradArray(locs = xy, cov_list = covlist)
 #times = delta*(1:n_obs)
 
 ##generating perlin covariate
+#library(ambient)
 #lim <- c(-1, 1, -1, 1)*250
 #resol <- 1
 #ncov <- 3
@@ -112,26 +115,26 @@ gradarray <- bilinearGradArray(locs = xy, cov_list = covlist)
 #xygrid <- expand.grid(xgrid,ygrid)
 #dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/(100)
 #covlist[[ncov+1]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
-
-
-
-#thin = 1
-#dt = 1
+#
+#
+#
+#thin = 100
+#dt = 0.01
 #delta = dt*thin
 #N = thin-1
 #M = 50
 #n_obs = 5000
 #Tmax = n_obs*thin*dt
-ncores = 10
-X = xy 
-times = time 
-
-#simulating track
+#
+#
+##simulating track
 #X = simLMM(delta,speed,covlist,c(4,2,1,-0.1),c(0,0),n_obs)
 #ID = c(rep(1, 2500), rep(2, 2500))
 #times = delta*(1:n_obs)
 
-
+ncores = 10
+X = xy 
+times = time 
 
 
 
@@ -146,6 +149,7 @@ lik_grad <- function(par, cl){
     if (ID[i] != ID[i + 1]) return(rep(0, p + 2L))
     
     N     <- ceiling((times[i + 1] - times[i]) / delta_max)
+    N = max(2, N)
     delta <- (times[i + 1] - times[i])
     
     if (N == 1L) {
@@ -192,32 +196,39 @@ lik_grad <- function(par, cl){
     x_samples <- sweep(B[[i]][1, 1:M, 1:N] * gamma, 2, mu_x, "+")
     y_samples <- sweep(B[[i]][2, 1:M, 1:N] * gamma, 2, mu_y, "+")
     
-    L_k <- P[i, 1:M] * gamma^(2 * N)
+    l_k <- P[i, 1:M]  + log(gamma)*(2 * N)
     
     full_x <- cbind(X[i, 1], x_samples, X[i + 1, 1])
     full_y <- cbind(X[i, 2], y_samples, X[i + 1, 2])
     
     # C++ must return a (1 + p + 1) x M matrix now
-    res_mat <- compute_lik_grad_full_cpp(full_x, full_y, L_k, X, i, par, delta, N, covlist)
+    # res_mat from compute_log_lik_grad_full_cpp:
+    # row 1      : log w_j
+    # rows 2..(p+1): score components for beta_j
+    # row p+2      : score for diffusion parameter s
     
-    L_k_new <- res_mat[1, ]
-    S <- sum(L_k_new)
-    if (!is.finite(S) || S <= 0) return(rep(0, p + 2L))
+    res_mat <- compute_log_lik_grad_full_cpp(full_x, full_y, l_k, X, i, par, delta, N, covlist)
     
-    loglike_i <- log(S / M)
+    logw <- res_mat[1, ]
+    a    <- max(logw)
+    w    <- exp(logw - a)
+    Wsum <- sum(w)
+    if (!is.finite(Wsum) || Wsum <= 0) return(rep(0, p + 2L))
     
-    # covariate gradients: rows 2..(p+1)
+    loglike_i <- a + log(Wsum) - log(M)
+    
+    norm_w <- w / Wsum
+    
     g_beta <- numeric(p)
-
     for (j in 1:p) {
-      g_beta[j] <- -sum(res_mat[1 + j, ] * L_k_new) / (2 * S)
+      g_beta[j] <- -sum(res_mat[1 + j, ] * norm_w) / 2
     }
-
     
-    # diffusion scale gradient: last row
-    g_s <- -sum(res_mat[p + 2L, ] * L_k_new) / S
+    g_s <- -sum(res_mat[p + 2L, ] * norm_w)
     
     c(loglike_i, g_beta, g_s)
+    
+    
   }
   
   results_list <- parLapply(cl, 1:(nrow(X) - 1L), compute)
@@ -238,9 +249,8 @@ lik_grad <- function(par, cl){
 
 
 
-
 M = 50
-delta_max = 1000
+delta_max = 0.01
 #brownian bridge array
 B <- list()
 #importance sampling wights
@@ -249,6 +259,7 @@ P <- array(data = NA, c(nrow(X)-1,M))
 for (i in 1:(nrow(X)-1)) {
   if(ID[i] == ID[i+1]){
     N = ceiling((times[i+1] - times[i])/delta_max)
+    N = max(2, N)
     if(N != 1){
       delta = (times[i+1] - times[i])
       
@@ -270,8 +281,8 @@ for (i in 1:(nrow(X)-1)) {
       
       B[[i]] = b
       
-      P[i, 1:M] = 1/(mvnfast::dmvn(b[1, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE) * 
-                       mvnfast::dmvn(b[2, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE))
+      P[i, 1:M] = -mvnfast::dmvn(b[1, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE, log = TRUE) -
+                       mvnfast::dmvn(b[2, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE, log = TRUE)
     }
     
     
@@ -296,6 +307,8 @@ clusterEvalQ(cl, {
   sourceCpp(cpp_path)
 })
 
+
+
 t = Sys.time()
 o = optim(par = c(0,0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf,-Inf, -Inf, 0.0001))
 t = Sys.time()-t
@@ -306,6 +319,85 @@ print(t)
 
 
 
+deltas = c(5,1,0.5, 0.2, 0.1, 0.05, 0.01)
+params = matrix(NA, ncol = 5, nrow = length(deltas))
+for (k in 1:length(deltas)) {
+  delta_max = deltas[k]
+  
+  #brownian bridge array
+  B <- list()
+  #importance sampling wights
+  P <- array(data = NA, c(nrow(X)-1,M))
+  #generating bridges
+  for (i in 1:(nrow(X)-1)) {
+    if(ID[i] == ID[i+1]){
+      N = ceiling((times[i+1] - times[i])/delta_max)
+      N = max(2, N)
+      if(N != 1){
+        delta = (times[i+1] - times[i])
+        
+        #brownian bridge covariance matrix
+        sigma_matrix <- delta * outer(1 - 1:N/(N+1), 1:N/(N+1))
+        sigma_matrix <- lower.tri(sigma_matrix, TRUE) * sigma_matrix +
+          t(lower.tri(sigma_matrix) * sigma_matrix)
+        chol_m = (chol(sigma_matrix))
+        
+        
+        chol_m <- chol(sigma_matrix)
+        
+        b <- array(data = NA, c(2, M, N))
+        
+        
+        # Generate all M sample tracks at once
+        b[1, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+        b[2, 1:M, 1:N] <- mvnfast::rmvn(M, rep(0,N), sigma = chol_m, isChol = TRUE)
+        
+        B[[i]] = b
+        
+        P[i, 1:M] = -mvnfast::dmvn(b[1, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE, log = TRUE) -
+          mvnfast::dmvn(b[2, 1:M, 1:N], rep(0,N), sigma = chol_m, isChol = TRUE, log = TRUE)
+      }
+      
+      
+    } 
+  }
+  
+  #using paralellized and vectorized likelihood in optim
+  cl <- makeCluster(ncores)
+  
+  clusterExport(cl, varlist = c("X",  "M",
+                                "covlist", "bilinearGradVec", "B", "P", 
+                                "times", "ID", "delta_max"), envir = environment())
+  clusterEvalQ(cl, library(mvnfast))
+  cpp_path <- here("compute_lik_grad_full.cpp")
+  
+  # export the variable cpp_path (the name as a string)
+  clusterExport(cl, varlist = "cpp_path")
+  
+  # load Rcpp and source the file on all workers
+  clusterEvalQ(cl, {
+    library(Rcpp)
+    sourceCpp(cpp_path)
+  })
+  
+  
+  
+  t = Sys.time()
+  o = optim(par = c(0,0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf,-Inf, -Inf, 0.0001))
+  t = Sys.time()-t
+  stopCluster(cl)
+  o
+  print(t)
+  
+  params[k, ] = o$par
+}
+
+ggplot() +
+  geom_line(aes(x = deltas, y = params[,5])) +
+  labs(x = "delta_max") +
+  theme_bw()
+
+library(ggplot2)
 
 # Evaluate covariate gradients at observed locations
 gradarray <- bilinearGradArray(locs = xy, cov_list = covlist)
