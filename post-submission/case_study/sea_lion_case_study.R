@@ -318,8 +318,8 @@ print(t)
 
 
 
-
-deltas = c(5,1,0.5, 0.2, 0.1, 0.05, 0.01)
+M = 400
+deltas = exp(seq(log(0.001), log(25), length.out = 40))
 params = matrix(NA, ncol = 5, nrow = length(deltas))
 for (k in 1:length(deltas)) {
   delta_max = deltas[k]
@@ -395,6 +395,7 @@ for (k in 1:length(deltas)) {
 ggplot() +
   geom_line(aes(x = deltas, y = params[,5])) +
   labs(x = "delta_max") +
+  scale_x_log10() +
   theme_bw()
 
 library(ggplot2)
