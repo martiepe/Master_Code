@@ -149,7 +149,7 @@ lik_grad <- function(par, cl){
     if (ID[i] != ID[i + 1]) return(rep(0, p + 2L))
     
     N     <- ceiling((times[i + 1] - times[i]) / delta_max)
-    N = max(2, N)
+    #N = max(2, N)
     delta <- (times[i + 1] - times[i])
     
     if (N == 1L) {
@@ -249,7 +249,7 @@ lik_grad <- function(par, cl){
 
 
 
-M = 50
+M = 500
 delta_max = 0.01
 #brownian bridge array
 B <- list()
@@ -317,22 +317,22 @@ o
 print(t)
 
 
-
-M = 400
-deltas = exp(seq(log(0.001), log(25), length.out = 40))
-params = matrix(NA, ncol = 5, nrow = length(deltas))
-for (k in 1:length(deltas)) {
-  delta_max = deltas[k]
-  
-  #brownian bridge array
-  B <- list()
-  #importance sampling wights
-  P <- array(data = NA, c(nrow(X)-1,M))
-  #generating bridges
-  for (i in 1:(nrow(X)-1)) {
+M = 100
+deltas = exp(seq(log(0.01), log(25), length.out = 30))
+params = matrix(NA, ncol = 6, nrow = 10*length(deltas))
+for (k in 30:length(deltas)) {
+  for (d in 1:10) {
+    delta_max = deltas[k]
+    
+    #brownian bridge array
+    B <- list()
+    #importance sampling wights
+    P <- array(data = NA, c(nrow(X)-1,M))
+    #generating bridges
+    for (i in 1:(nrow(X)-1)) {
     if(ID[i] == ID[i+1]){
       N = ceiling((times[i+1] - times[i])/delta_max)
-      N = max(2, N)
+      #N = max(2, N)
       if(N != 1){
         delta = (times[i+1] - times[i])
         
@@ -361,42 +361,51 @@ for (k in 1:length(deltas)) {
       
     } 
   }
+    
+    #using paralellized and vectorized likelihood in optim
+    cl <- makeCluster(ncores)
+    
+    clusterExport(cl, varlist = c("X",  "M",
+                                  "covlist", "bilinearGradVec", "B", "P", 
+                                  "times", "ID", "delta_max"), envir = environment())
+    clusterEvalQ(cl, library(mvnfast))
+    cpp_path <- here("compute_lik_grad_full.cpp")
+    
+    # export the variable cpp_path (the name as a string)
+    clusterExport(cl, varlist = "cpp_path")
+    
+    # load Rcpp and source the file on all workers
+    clusterEvalQ(cl, {
+      library(Rcpp)
+      sourceCpp(cpp_path)
+    })
+    
+    
+    
+    t = Sys.time()
+    o = optim(par = c(0,0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf,-Inf, -Inf, 0.0001))
+    t = Sys.time()-t
+    stopCluster(cl)
+    o
+    print(t)
+    
+    params[(k-1)*10 + d, ] = c(o$par, delta_max)
+    print(d)
+  }
   
-  #using paralellized and vectorized likelihood in optim
-  cl <- makeCluster(ncores)
-  
-  clusterExport(cl, varlist = c("X",  "M",
-                                "covlist", "bilinearGradVec", "B", "P", 
-                                "times", "ID", "delta_max"), envir = environment())
-  clusterEvalQ(cl, library(mvnfast))
-  cpp_path <- here("compute_lik_grad_full.cpp")
-  
-  # export the variable cpp_path (the name as a string)
-  clusterExport(cl, varlist = "cpp_path")
-  
-  # load Rcpp and source the file on all workers
-  clusterEvalQ(cl, {
-    library(Rcpp)
-    sourceCpp(cpp_path)
-  })
-  
-  
-  
-  t = Sys.time()
-  o = optim(par = c(0,0,0,0,1), fn = function(x) lik_grad(x, cl)$l, gr = function(x) lik_grad(x, cl)$g, method = "L-BFGS-B", lower = c(-Inf, -Inf,-Inf, -Inf, 0.0001))
-  t = Sys.time()-t
-  stopCluster(cl)
-  o
-  print(t)
-  
-  params[k, ] = o$par
 }
 
-ggplot() +
-  geom_line(aes(x = deltas, y = params[,5])) +
+df = data.frame(beta1 = params[,1], beta2 = params[,2], beta3 = params[,3], beta4 = params[,4], gammasq = params[,5],delta_max = params[,6])
+save(df, file = "post-submission/case_study/sea_lion_deltamax_studyM=100.Rda")
+
+
+ggplot(df) +
+  geom_point(aes(x = delta_max, y = beta1), alpha = 0.5, color = "#F8766D") +#
   labs(x = "delta_max") +
   scale_x_log10() +
   theme_bw()
+
+
 
 library(ggplot2)
 
