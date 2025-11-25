@@ -512,20 +512,29 @@ library(Rcpp)
 cpp_path <- here("compute_lik_grad_full.cpp")
 sourceCpp(cpp_path)
 
-Var_max <- 1e-3      # target max MC variance of log transition per segment
-M_max   <- 2000L     # safety cap
+n_trans <- nrow(X) - 1L
 
-lik_grad <- function(par, cl){
+Var_max <- 1e-3   # per-transition Var(log p̂_i) target
+M_max   <- 2000L  # safety cap
+
+# initial number of bridges per transition (start at 1)
+M_vec <- rep(2L, n_trans)
+
+lik_grad <- function(par, cl) {
   # par = [beta_1, ..., beta_p, s]
   p <- length(par) - 1L
   if (p < 1L) stop("par must be [betas..., s] with at least one covariate.")
   
   gamma <- sqrt(par[p + 1L])
   
-  compute <- function(i){
+  compute <- function(i) {
+    # default output if we skip this transition
+    zero_contrib <- rep(0, p + 2L)
     
-    # skip if different IDs
-    if (ID[i] != ID[i + 1]) return(rep(0, p + 2L))
+    # cross-ID transitions: no contribution, keep M as is
+    if (ID[i] != ID[i + 1]) {
+      return(list(contrib = zero_contrib, M_used = 0L))
+    }
     
     N     <- ceiling((times[i + 1] - times[i]) / delta_max)
     delta <- (times[i + 1] - times[i])
@@ -538,8 +547,8 @@ lik_grad <- function(par, cl){
       G_arr <- bilinearGradVec(matrix(X[i, ], nrow = 1), covlist)
       G_i   <- t(drop(G_arr[, 1, ]))  # 2 x p
       
-      if (!all(is.finite(G_i))){
-        return(rep(0, p + 2L))
+      if (!all(is.finite(G_i))) {
+        return(list(contrib = zero_contrib, M_used = 0L))
       }
       
       beta <- par[1:p]
@@ -548,18 +557,19 @@ lik_grad <- function(par, cl){
       mu <- as.vector((delta * s / 2) * (G_i %*% beta))  # length 2
       e  <- y - mu
       
-      # log-likelihood for d=2, Σ = δ s I_2
       loglike_i <- -log(2 * pi) - log(delta * s) - sum(e * e) / (2 * delta * s)
       
-      # scores: wrt beta and s (= gamma^2)
       g_beta <- 0.5 * as.numeric(crossprod(G_i, e))  # p-vector
-      g_s    <- -1 / s + (sum(e * e)) / (2 * delta * s^2) +
+      g_s    <- -1 / s +
+        (sum(e * e)) / (2 * delta * s^2) +
         as.numeric(t(e) %*% (G_i %*% beta)) / (2 * s)
       
       if (!is.finite(loglike_i) || !all(is.finite(g_beta)) || !is.finite(g_s)) {
-        return(rep(0, p + 2L))
+        return(list(contrib = zero_contrib, M_used = 0L))
       }
-      return(c(loglike_i, -g_beta, -g_s))
+      
+      contrib <- c(loglike_i, -g_beta, -g_s)
+      return(list(contrib = contrib, M_used = 0L))  # M_used irrelevant for N=1
     }
     
     ## ----------------- N > 1: bridges + adaptive M_i -----------------
@@ -575,129 +585,204 @@ lik_grad <- function(par, cl){
       t(lower.tri(sigma_matrix) * sigma_matrix)
     chol_m <- chol(sigma_matrix)
     
-    # start with one bridge and grow as needed
-    M_i <- 0L
+    # starting M for this segment (from global vector)
+    M0 <- M_vec[i]
+    if (is.na(M0) || M0 < 1L) M0 <- 1L
+    if (M0 > M_max) M0 <- M_max
     
-    # log-weight aggregation (stable in log-space)
-    A      <- -Inf         # running max logw
-    T1     <- 0.0          # Σ exp(logw_k - A)
-    T2     <- 0.0          # Σ exp(2(logw_k - A))
-    S_beta <- numeric(p)   # Σ score_beta_k * exp(logw_k - A)
-    S_s    <- 0.0          # Σ score_s_k * exp(logw_k - A)
-    
-    # set seed ONCE per segment, so bridges are reproducible and cumulative
-    set.seed(i)
+    # running aggregators in log-space
+    A      <- -Inf          # max log w
+    T1     <- 0.0           # Σ exp(logw_k - A)
+    T2     <- 0.0           # Σ exp(2(logw_k - A))
+    S_beta <- numeric(p)    # Σ score_beta_k * exp(logw_k - A)
+    S_s    <- 0.0           # Σ score_s_k * exp(logw_k - A)
     
     loglike_i_final <- NA_real_
     g_beta_final    <- rep(NA_real_, p)
     g_s_final       <- NA_real_
     
+    # set seed once; we will draw M0 bridges in batch, then continue the RNG
+    set.seed(i+1)
+    
+    ## ---------- Batch: first M0 bridges ----------
+    # b1, b2: M0 x N
+    b1 <- mvnfast::rmvn(M0, rep(0, N), sigma = chol_m, isChol = TRUE)
+    b2 <- mvnfast::rmvn(M0, rep(0, N), sigma = chol_m, isChol = TRUE)
+    
+    x_samples <- sweep(b1 * gamma, 2L, mu_x, "+")  # M0 x N
+    y_samples <- sweep(b2 * gamma, 2L, mu_y, "+")  # M0 x N
+    
+    log_phi1 <- mvnfast::dmvn(b1, rep(0, N), sigma = chol_m,
+                              isChol = TRUE, log = TRUE)
+    log_phi2 <- mvnfast::dmvn(b2, rep(0, N), sigma = chol_m,
+                              isChol = TRUE, log = TRUE)
+    log_L_batch <- -log_phi1 - log_phi2 + (2 * N) * log(gamma)  # length M0
+    
+    full_x_batch <- cbind(rep(X[i, 1], M0), x_samples, rep(X[i + 1, 1], M0))
+    full_y_batch <- cbind(rep(X[i, 2], M0), y_samples, rep(X[i + 1, 2], M0))
+    
+    res_batch <- compute_log_lik_grad_full_cpp(
+      full_x_batch, full_y_batch,
+      log_L_k = log_L_batch,
+      X       = X,
+      i_index = i,
+      par     = par,
+      delta   = delta,
+      N       = N,
+      covlist = covlist
+    )
+    
+    logw_batch <- res_batch[1, ]                     # length M0
+    score_b_mat <- res_batch[2:(p + 1L), , drop = FALSE]  # p x M0
+    score_s_vec <- res_batch[p + 2L, ]              # length M0
+    
+    if (any(!is.finite(logw_batch)) ||
+        any(!is.finite(score_b_mat)) ||
+        any(!is.finite(score_s_vec))) {
+      return(list(contrib = zero_contrib, M_used = M0))
+    }
+    
+    # initialise aggregators from batch
+    A  <- max(logw_batch)
+    z  <- exp(logw_batch - A)          # length M0
+    T1 <- sum(z)
+    T2 <- sum(z * z)
+    S_beta <- score_b_mat %*% z        # p-vector
+    S_s    <- sum(score_s_vec * z)
+    
+    M_i <- M0
+    
+    # compute loglike and grad from current aggregates
+    loglike_i <- A + log(T1) - log(M_i)
+    g_beta    <- -(as.numeric(S_beta) / T1) / 2
+    g_s       <- -(S_s / T1)
+    
+    loglike_i_final <- loglike_i
+    g_beta_final    <- g_beta
+    g_s_final       <- g_s
+    
+    # delta-method variance after batch
+    if (M_i >= 2L) {
+      cv2        <- M_i * (T2 / (T1 * T1)) - 1.0
+      var_loghat <- cv2 / M_i
+      if (is.finite(var_loghat) && var_loghat <= Var_max) {
+        contrib <- c(loglike_i_final, g_beta_final, g_s_final)
+        return(list(contrib = contrib, M_used = M_i))
+      }
+    }
+    
+    ## ---------- Incremental: add step_M bridges at a time ----------
+    step_M = 50
     repeat {
-      # add one more bridge
-      M_i <- M_i + 1L
-      if (M_i > M_max) {
+      if (M_i >= M_max) {
         warning(sprintf("Segment %d reached M_max = %d", i, M_max))
         break
       }
       
-      # simulate ONE Brownian bridge interior
-      b1 <- mvnfast::rmvn(1, rep(0, N), sigma = chol_m, isChol = TRUE)  # 1 x N
-      b2 <- mvnfast::rmvn(1, rep(0, N), sigma = chol_m, isChol = TRUE)
+      # how many new bridges this round (cap at M_max)
+      add_M <- min(step_M, M_max - M_i)
+      if (add_M <= 0L) break
       
-      # scale and shift: interior locations
-      x_int <- as.numeric(sweep(b1 * gamma, 2L, mu_x, "+"))  # length N
-      y_int <- as.numeric(sweep(b2 * gamma, 2L, mu_y, "+"))
+      # simulate add_M new bridges; RNG continues from where batch left off
+      b1_new <- mvnfast::rmvn(add_M, rep(0, N), sigma = chol_m, isChol = TRUE)  # add_M x N
+      b2_new <- mvnfast::rmvn(add_M, rep(0, N), sigma = chol_m, isChol = TRUE)
       
-      # full path including endpoints
-      path_x <- c(X[i, 1], x_int, X[i + 1, 1])
-      path_y <- c(X[i, 2], y_int, X[i + 1, 2])
+      x_samples_new <- sweep(b1_new * gamma, 2L, mu_x, "+")    # add_M x N
+      y_samples_new <- sweep(b2_new * gamma, 2L, mu_y, "+")
       
-      # proposal log-density under the Brownian bridge (base, before gamma scaling)
-      log_phi1 <- mvnfast::dmvn(b1, rep(0, N), sigma = chol_m,
-                                isChol = TRUE, log = TRUE)
-      log_phi2 <- mvnfast::dmvn(b2, rep(0, N), sigma = chol_m,
-                                isChol = TRUE, log = TRUE)
+      log_phi1_new <- mvnfast::dmvn(b1_new, rep(0, N), sigma = chol_m,
+                                    isChol = TRUE, log = TRUE)
+      log_phi2_new <- mvnfast::dmvn(b2_new, rep(0, N), sigma = chol_m,
+                                    isChol = TRUE, log = TRUE)
+      log_L_new <- -log_phi1_new - log_phi2_new + (2 * N) * log(gamma)  # length add_M
       
-      # log proposal correction (same structure as P + log(gamma)*(2N))
-      log_L_k <- -as.numeric(log_phi1) - as.numeric(log_phi2) + (2 * N) * log(gamma)
+      full_x_new <- cbind(rep(X[i, 1], add_M), x_samples_new, rep(X[i + 1, 1], add_M))
+      full_y_new <- cbind(rep(X[i, 2], add_M), y_samples_new, rep(X[i + 1, 2], add_M))
       
-      # call C++ for THIS bridge only (M = 1)
-      full_x <- matrix(path_x, nrow = 1)
-      full_y <- matrix(path_y, nrow = 1)
-      
-      res_mat <- compute_log_lik_grad_full_cpp(
-        full_x, full_y,
-        log_L_k = log_L_k,
-        X, i_index = i,
-        par = par,
-        delta = delta,
-        N = N,
+      res_new <- compute_log_lik_grad_full_cpp(
+        full_x_new, full_y_new,
+        log_L_k = log_L_new,
+        X       = X,
+        i_index = i,
+        par     = par,
+        delta   = delta,
+        N       = N,
         covlist = covlist
       )
       
-      logw_k    <- res_mat[1, 1]
-      score_b_k <- res_mat[2:(p + 1L), 1]
-      score_s_k <- res_mat[p + 2L, 1]
+      logw_new     <- res_new[1, ]                         # length add_M
+      score_b_new  <- res_new[2:(p + 1L), , drop = FALSE]  # p x add_M
+      score_s_new  <- res_new[p + 2L, ]                    # length add_M
       
-      if (!is.finite(logw_k) || any(!is.finite(score_b_k)) || !is.finite(score_s_k)) {
-        return(rep(0, p + 2L))
+      if (any(!is.finite(logw_new)) ||
+          any(!is.finite(score_b_new)) ||
+          any(!is.finite(score_s_new))) {
+        break
       }
       
-      # stable accumulation in log-space
-      if (M_i == 1L) {
-        A      <- logw_k
-        T1     <- 1.0
-        T2     <- 1.0
-        S_beta <- score_b_k
-        S_s    <- score_s_k
-      } else if (logw_k <= A) {
-        z  <- exp(logw_k - A)
-        T1 <- T1 + z
-        T2 <- T2 + z * z
-        S_beta <- S_beta + score_b_k * z
-        S_s    <- S_s + score_s_k * z
-      } else {
-        # new max logw; rescale
-        z_scale <- exp(A - logw_k)
-        T1      <- T1 * z_scale + 1.0
-        T2      <- T2 * (z_scale * z_scale) + 1.0
-        S_beta  <- S_beta * z_scale + score_b_k
-        S_s     <- S_s * z_scale + score_s_k
-        A       <- logw_k
+      # update aggregators one new bridge at a time (no extra C++ calls)
+      for (k in 1:add_M) {
+        logw_k    <- logw_new[k]
+        score_b_k <- score_b_new[, k]
+        score_s_k <- score_s_new[k]
+        
+        if (logw_k <= A) {
+          z  <- exp(logw_k - A)
+          T1 <- T1 + z
+          T2 <- T2 + z * z
+          S_beta <- S_beta + score_b_k * z
+          S_s    <- S_s + score_s_k * z
+        } else {
+          z_scale <- exp(A - logw_k)
+          T1      <- T1 * z_scale + 1.0
+          T2      <- T2 * (z_scale * z_scale) + 1.0
+          S_beta  <- S_beta * z_scale + score_b_k
+          S_s     <- S_s * z_scale + score_s_k
+          A       <- logw_k
+        }
       }
       
-      # compute loglike and gradient from aggregates
-      # log p̂_i = log( (1/M_i) Σ w_k ) = A + log(T1) - log(M_i)
+      M_i <- M_i + add_M
+      
+      # recompute loglike and gradient
       loglike_i <- A + log(T1) - log(M_i)
-      g_beta    <- -(S_beta / T1) / 2
+      g_beta    <- -(as.numeric(S_beta) / T1) / 2
       g_s       <- -(S_s / T1)
       
       loglike_i_final <- loglike_i
       g_beta_final    <- g_beta
       g_s_final       <- g_s
       
-      # delta-method variance of log p̂_i from weights
+      # MC variance with M_i bridges
       if (M_i >= 2L) {
-        # cv^2 = M_i * T2 / T1^2 - 1
         cv2        <- M_i * (T2 / (T1 * T1)) - 1.0
         var_loghat <- cv2 / M_i
-        
         if (is.finite(var_loghat) && var_loghat <= Var_max) {
           break
         }
       }
-    }  # repeat
+    }
     
-    c(loglike_i_final, g_beta_final, g_s_final)
+    
+    contrib <- c(loglike_i_final, g_beta_final, g_s_final)
+    list(contrib = contrib, M_used = M_i)
   }
   
+  # parallel over segments
   results_list <- parLapply(cl, 1:(nrow(X) - 1L), compute)
-  res_mat      <- do.call(rbind, results_list)  # (n_seg) x (p+2)
+  
+  # extract contributions and updated M values
+  contrib_mat <- do.call(rbind, lapply(results_list, `[[`, "contrib"))  # (n_seg) x (p+2)
+  M_used_new  <- vapply(results_list, function(x) as.integer(x$M_used), integer(1))
+  
+  
+  # update global M_vec (non-decreasing)
+  M_vec <<- pmax(M_vec, M_used_new)
   
   # fold
-  l_sum     <- sum(res_mat[, 1], na.rm = TRUE)
-  g_betasum <- colSums(res_mat[, 2:(p + 1L), drop = FALSE], na.rm = TRUE)
-  g_ssum    <- sum(res_mat[, p + 2L], na.rm = TRUE)
+  l_sum     <- sum(contrib_mat[, 1], na.rm = TRUE)
+  g_betasum <- colSums(contrib_mat[, 2:(p + 1L), drop = FALSE], na.rm = TRUE)
+  g_ssum    <- sum(contrib_mat[, p + 2L], na.rm = TRUE)
   
   if (!is.finite(l_sum)) {
     return(list(l = 1e10, g = rep(0, p + 1L)))
@@ -705,6 +790,7 @@ lik_grad <- function(par, cl){
   print(par)
   list(l = -l_sum, g = c(g_betasum, g_ssum))
 }
+
 
 make_lik_grad_cached <- function(cl) {
   last_par <- NULL
@@ -730,11 +816,12 @@ make_lik_grad_cached <- function(cl) {
   list(fn = fn, gr = gr)
 }
 
+M_vec <- rep(2L, n_trans)
 
 
-Var_max <- 0.01
-M_max     <- 1000      # already used above
-delta_max <- 0.1
+Var_max <- 1/5342
+M_max     <- Inf      # already used above
+delta_max <- 0.05
 ncores    <- 10         # or whatever
 
 # parallel setup
@@ -743,7 +830,8 @@ cl <- makeCluster(ncores)
 clusterExport(cl, varlist = c(
   "X", "ID", "times",
   "covlist", "bilinearGradVec",
-  "delta_max", "Var_max", "M_max"
+  "delta_max", "Var_max", "M_max",
+  "M_vec"  # M_vec is captured in compute, but exporting doesn't hurt
 ), envir = environment())
 
 clusterEvalQ(cl, library(mvnfast))
@@ -762,11 +850,12 @@ wrapped <- make_lik_grad_cached(cl)
 
 t <- Sys.time()
 o <- optim(
-  par   = c(0, 0, 0, 0, 1),
+  par   = c(7.5e-05, -0.000175, 0.001, 0.0009, 12.5),
   fn    = wrapped$fn,
   gr    = wrapped$gr,
   method = "L-BFGS-B",
-  lower  = c(-Inf, -Inf, -Inf, -Inf, 0.0001)
+  lower  = c(-Inf, -Inf, -Inf, -Inf, 0.0001),
+  control = list(factr = 1e2, pgtol = 1e-8)
 )
 t <- Sys.time() - t
 
@@ -774,10 +863,61 @@ stopCluster(cl)
 
 o
 print(t)
+hist(M_vec)
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("post-submission/case_study/sea_lion_deltamax_studyM=100.Rda")
+
+
+M = 500
+delta_max = 0.05
+params = matrix(NA, ncol = 6, nrow = 10*length(deltas))
+
+for (d in 1:10) {
+  
+  
+  
+  params[d, ] = c(o$par, delta_max)
+  print(d)
+  
+  
+  ggplot() +
+  geom_point(data = df,
+             mapping = aes(x = delta_max, y = beta4),
+             alpha = 0.5,
+             color = "#F8766D") +
+  geom_point(aes(x = rep(0.05, 10), y = params[1:10, 4])) +
+  labs(x = "delta_max") +
+  scale_x_log10() +
+  theme_bw()
+  
+}
+
+
+
+
+
+
+
+
+# [1]  9.279162e-04 -4.472065e-04 -1.811526e-04  6.279265e-05  1.257023e+01
+
+# [1]  9.812248e-04 -6.172214e-04 -1.928540e-04  7.664456e-05  1.253654e+01
 
 
 
